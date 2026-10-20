@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AuthPass</title>
+<style>
+  :root {
+    --bg: #f5f6f8; --card: #fff; --text: #1b1f24; --muted: #636c76; --line: #d8dde3;
+    --closed: #8a939c; --wait: #d08a00; --open: #1f9d55; --err: #d1353a; --accent: #2f6fdf;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #111418; --card: #1a1f25; --text: #e8ebee; --muted: #9aa4ae; --line: #2c333b; --accent: #5b8ff0; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 16px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  main { max-width: 440px; margin: 0 auto; padding: 24px 16px; }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  .sub { color: var(--muted); font-size: 14px; margin: 0 0 20px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 20px; }
+  .status { display: flex; align-items: center; gap: 12px; }
+  .dot { width: 14px; height: 14px; border-radius: 50%; background: var(--closed); flex: none; }
+  .dot.detected { background: var(--wait); animation: pulse 1.2s infinite; }
+  .dot.open { background: var(--open); }
+  .dot.error { background: var(--err); }
+  @keyframes pulse { 50% { opacity: .35; } }
+  .title { font-weight: 600; }
+  .hint { color: var(--muted); font-size: 14px; margin: 12px 0 0; }
+  .timer { font: 600 44px/1 ui-monospace, SFMono-Regular, Menlo, monospace; text-align: center; margin: 20px 0 6px; font-variant-numeric: tabular-nums; }
+  .bar { height: 6px; background: var(--line); border-radius: 3px; overflow: hidden; }
+  .bar > div { height: 100%; background: var(--open); width: 0; transition: width 1s linear; }
+  button { width: 100%; margin-top: 16px; padding: 14px; border: 0; border-radius: 10px; font-size: 16px; font-weight: 600; cursor: pointer; }
+  button.primary { background: var(--accent); color: #fff; }
+  button.secondary { background: transparent; color: var(--text); border: 1px solid var(--line); }
+  button:disabled { opacity: .5; cursor: default; }
+  .net { margin-top: 16px; display: grid; gap: 6px; font-size: 14px; }
+  .net div { display: flex; justify-content: space-between; color: var(--muted); }
+  .net b { font-weight: 500; color: var(--text); }
+  .msg { color: var(--err); font-size: 14px; margin-top: 12px; min-height: 1em; }
+  footer { color: var(--muted); font-size: 12px; margin-top: 16px; text-align: center; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<main>
+  <h1>AuthPass</h1>
+  <p class="sub">Помощник получения кода подтверждения</p>
+
+  <section class="card">
+    <div class="status">
+      <span class="dot" id="dot"></span>
+      <div>
+        <div class="title" id="title">Подключение…</div>
+        <div class="hint" id="hint" style="margin:0"></div>
+      </div>
+    </div>
+
+    <div id="countdown" hidden>
+      <div class="timer" id="timer">0:00</div>
+      <div class="bar"><div id="bar"></div></div>
+    </div>
+
+    <button class="primary" id="open">Получить код</button>
+    <button class="secondary" id="done" hidden>Я ввёл код</button>
+    <div class="msg" id="msg"></div>
+
+    <div class="net">
+      <div>Устройство <b id="ip">—</b></div>
+      <div>Связь с AuthPass <b id="link">—</b></div>
+      <div>Узлы доставки <b id="reach">закрыты</b></div>
+    </div>
+  </section>
+  <footer id="targets"></footer>
+</main>
+<script>
+const $ = (id) => document.getElementById(id);
+let state = null, tick = null, probe = null, windowSeconds = 60, targets = [];
+
+function fmt(sec) {
+  sec = Math.max(0, Math.ceil(sec));
+  return Math.floor(sec / 60) + ":" + String(sec % 60).padStart(2, "0");
+}
+
+function render() {
+  const s = state && state.session;
+  const st = s ? s.state : "closed";
+  $("dot").className = "dot " + (s && s.error ? "error" : st);
+  $("countdown").hidden = st !== "open";
+  $("done").hidden = st !== "open";
+  $("open").hidden = st === "open";
+  clearInterval(tick);
+  if (st === "open") {
+    $("title").textContent = "Шлюз открыт";
+    $("hint").textContent = "Откройте VK и дождитесь уведомления с кодом";
+    const end = Date.now() + (s.remaining ?? windowSeconds) * 1000;
+    const step = () => {
+      const left = (end - Date.now()) / 1000;
+      $("timer").textContent = fmt(left);
+      $("bar").style.width = (100 * Math.max(0, left) / windowSeconds) + "%";
+    };
+    step(); tick = setInterval(step, 250);
+    startProbe();
+  } else {
+    stopProbe();
+    if (st === "detected") {
+      $("title").textContent = "Обнаружен вход через " + (s.host || "SSO");
+      $("hint").textContent = "Если сайт просит код, нажмите кнопку ниже";
+    } else {
+      $("title").textContent = "Шлюз закрыт";
+      $("hint").textContent = s && s.close_reason === "code_entered" ? "Готово, доступ закрыт" : "Нажмите, когда сайт попросит код подтверждения";
+    }
+  }
+}
+
+async function call(path) {
+  $("msg").textContent = "";
+  $("open").disabled = $("done").disabled = true;
+  try {
+    const r = await fetch(path, { method: "POST" });
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.detail || r.statusText);
+  } catch (e) {
+    $("msg").textContent = e.message;
+  } finally {
+    $("open").disabled = $("done").disabled = false;
+  }
+}
+
+// Индикатор «Узлы доставки»: no-cors запрос завершается, только если узел пропущен файрволом.
+async function checkReach() {
+  if (!targets.length) return;
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), 3000);
+  try {
+    await fetch("https://" + targets[0] + "/?authpass=" + Date.now(), { mode: "no-cors", signal: ctrl.signal, cache: "no-store" });
+    $("reach").textContent = "доступны";
+  } catch { $("reach").textContent = "пока недоступны"; }
+  finally { clearTimeout(t); }
+}
+function startProbe() { if (!probe) { checkReach(); probe = setInterval(checkReach, 5000); } }
+function stopProbe() { clearInterval(probe); probe = null; $("reach").textContent = "закрыты"; }
+
+function notify(s) {
+  if (document.hasFocus()) return;
+  if ("Notification" in window && Notification.permission === "granted") {
+    new Notification("AuthPass", { body: "Нужен код подтверждения? Откройте панель." });
+  }
+  document.title = "● AuthPass";
+}
+window.addEventListener("focus", () => { document.title = "AuthPass"; });
+
+function connect() {
+  const ws = new WebSocket((location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/ws");
+  let ping;
+  ws.onopen = () => { $("link").textContent = "есть"; ping = setInterval(() => ws.send("ping"), 20000); };
+  ws.onclose = () => { $("link").textContent = "нет, переподключение…"; clearInterval(ping); setTimeout(connect, 2000); };
+  ws.onmessage = (ev) => {
+    const m = JSON.parse(ev.data);
+    if (m.type === "state") {
+      windowSeconds = m.window_seconds; targets = m.targets;
+      $("ip").textContent = m.client_ip;
+      $("targets").textContent = "Открывается только: " + m.targets.join(", ");
+      state = m;
+    } else if (m.type === "session") {
+      const prev = state && state.session;
+      if (m.session.state === "detected" && (!prev || prev.id !== m.session.id)) notify(m.session);
+      state = { ...state, session: m.session.state === "closed" && prev && prev.id !== m.session.id ? prev : m.session };
+    } else return;
+    render();
+  };
+}
+
+$("open").onclick = () => {
+  if ("Notification" in window && Notification.permission === "default") Notification.requestPermission();
+  call("/api/me/open");
+};
+$("done").onclick = () => call("/api/me/done");
+connect();
+</script>
+</body>
+</html>
