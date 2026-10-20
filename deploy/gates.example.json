@@ -1,15 +1,18 @@
 [
   {
     "id": "vk",
-    "name": "VK",
+    "name": "VK ID",
     "kind": "verify",
     "gateways": [
+      "id.vk.ru",
       "id.vk.com"
     ],
     "targets": [
-      "im.vk.com",
+      "api.vk.ru",
       "api.vk.com",
-      "login.vk.com"
+      "login.vk.ru",
+      "login.vk.com",
+      "im.vk.com"
     ],
     "window": 20.0
   },
@@ -18,12 +21,11 @@
     "name": "Сбер ID",
     "kind": "verify",
     "gateways": [
-      "id.sber.ru",
-      "online.sberbank.ru"
+      "id.sber.ru"
     ],
     "targets": [
-      "api.sberbank.ru",
-      "securepayments.sberbank.ru"
+      "online.sberbank.ru",
+      "api.sberbank.ru"
     ],
     "window": 20.0
   },
@@ -33,11 +35,12 @@
     "kind": "verify",
     "gateways": [
       "passport.yandex.ru",
-      "id.yandex.ru"
+      "oauth.yandex.ru"
     ],
     "targets": [
-      "passport.yandex.ru",
-      "api.passport.yandex.ru"
+      "api.passport.yandex.ru",
+      "push.yandex.ru",
+      "id.yandex.ru"
     ],
     "window": 20.0
   },
@@ -49,9 +52,24 @@
       "id.alfabank.ru"
     ],
     "targets": [
-      "alfabank.ru",
+      "online.alfabank.ru",
       "click.alfabank.ru",
       "api.alfabank.ru"
+    ],
+    "window": 20.0
+  },
+  {
+    "id": "gosuslugi",
+    "name": "Госуслуги",
+    "kind": "verify",
+    "gateways": [
+      "esia.gosuslugi.ru",
+      "gosuslugi.ru"
+    ],
+    "targets": [
+      "lk.gosuslugi.ru",
+      "api.gosuslugi.ru",
+      "gu-st.ru"
     ],
     "window": 20.0
   },

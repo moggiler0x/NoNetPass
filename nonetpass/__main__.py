@@ -11,15 +11,20 @@ def main() -> None:
     sub = parser.add_subparsers(dest="command")
     cfg = sub.add_parser("router-config", help="напечатать разовую настройку роутера")
     cfg.add_argument("kind", choices=["mikrotik", "nftables", "ipset"])
+    cfg.add_argument("--hotspot-server", default="hotspot1", help="MikroTik: имя сервера Hotspot")
+    cfg.add_argument("--hotspot-net", default="192.168.110.0/24", help="MikroTik: сеть Hotspot")
+    cfg.add_argument("--portal", default="172.17.0.2:8080", help="MikroTik: адрес и порт NoNetPass")
     args = parser.parse_args()
     settings = Settings.from_env()
 
     if args.command == "router-config":
-        from .routercfg import GENERATORS
+        from .routercfg import GENERATORS, HotspotSetup
 
         catalog = settings.catalog()
         if args.kind == "mikrotik":
-            print(GENERATORS["mikrotik"](catalog, settings.client_list), end="")
+            host, _, port = args.portal.partition(":")
+            hotspot = HotspotSetup(args.hotspot_server, args.hotspot_net, host, int(port or 8080))
+            print(GENERATORS["mikrotik"](catalog, settings.client_list, hotspot), end="")
         else:
             print(GENERATORS[args.kind](catalog), end="")
         return

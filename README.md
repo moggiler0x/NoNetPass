@@ -22,7 +22,7 @@
 В изолированных сетях (корпоративные контуры, учебные полигоны, удалённые
 объекты) трафик жёстко фильтруется на роутере, а мобильной связи нет.
 Пользователь входит через разрешённый SSO-шлюз (VK ID, Сбер ID, Яндекс ID,
-Альфа ID), и сервис просит код подтверждения, который приходит в
+Альфа ID, Госуслуги), и сервис просит код подтверждения, который приходит в
 заблокированное приложение. С оплатой то же самое: банк просит подтвердить
 платёж, но его узлы закрыты, а SMS не дойдёт. Без администратора
 пользователь застревает.
@@ -37,7 +37,7 @@ NoNetPass открывается вместе с порталом сети (capt
 
 | Шлюз | Сервисы | Окно |
 |---|---|:-:|
-| **Вход в сеть** | VK, Сбер ID, Яндекс ID, Альфа ID | **20 с** |
+| **Вход в сеть** | VK ID, Сбер ID, Яндекс ID, Альфа ID, Госуслуги | **20 с** |
 | **Оплата** | Сбер, Альфа-Банк, ВТБ, Т-Банк | **60 с** |
 
 ```mermaid
@@ -97,11 +97,11 @@ NoNetPass с драйвером `nftables`. Сценарий проходит в
   после 60 с:      127.0.0.24 → 3ds.vtb.ru заблокирован (ConnectError)
 
 8. Журнал сессий
-  19:16:54  127.0.0.23  VK    opened
-  19:16:55  127.0.0.23  VK    closed (code_entered)
+  19:16:54  127.0.0.23  VK ID opened
+  19:16:55  127.0.0.23  VK ID closed (code_entered)
   19:16:58  127.0.0.24  ВТБ   opened
-  19:17:01  127.0.0.25  VK    opened
-  19:17:21  127.0.0.25  VK    closed (expired)
+  19:17:01  127.0.0.25  VK ID opened
+  19:17:21  127.0.0.25  VK ID closed (expired)
   19:17:58  127.0.0.24  ВТБ   closed (expired)
 ```
 
@@ -137,33 +137,54 @@ NoNetPass запускается **прямо на роутере** или **н�
 
 | Роутер | На роутере | С отдельной машины | Как задано окно | Таймаут на роутере |
 |---|---|---|---|:-:|
-| **MikroTik** RouterOS 7 | контейнер ([инструкция](deploy/mikrotik/container.md)) | `mikrotik` (REST) | список на шлюз | ✅ |
-| **MikroTik** RouterOS 6 | — | `mikrotik-api` (API 8728/8729) | список на шлюз | ✅ |
+| **MikroTik** RouterOS 7, Captive Portal провайдера | контейнер ([инструкция](deploy/mikrotik/README.md)) | `mikrotik` (REST) | список на шлюз, walled garden ip | ✅ |
+| **MikroTik** RouterOS 6 | — | `mikrotik-api` (API 8728/8729)\*\* | список на шлюз | ✅ |
 | **Keenetic** | Entware + `ipset` ([инструкция](deploy/keenetic/README.md)) | `keenetic` (RCI) | пары / ACL | ✅ / ❌\* |
 | **OpenWrt** 22.03+ | `nftables` ([инструкция](deploy/openwrt/README.md)) | `openwrt` (ubus) | пары | ✅ |
 | **ASUS Merlin, DD-WRT**, OpenWrt fw3, Linux с iptables | `ipset` | — | пары | ✅ |
 | **OPNsense** | — | `opnsense` (API) | алиас на шлюз | ❌\* |
 
 \* Без таймаута на роутере окно закрывает только NoNetPass, с повторами.
+\*\* Инструкция провайдера Captive Portal отключает службы `api` и `api-ssl`,
+поэтому в такой сети используется драйвер `mikrotik` (REST через `www-ssl`).
 У Keenetic через RCI правила не сохраняются в startup-config и чистятся при
 следующем старте NoNetPass.
 
 Разовую настройку роутера генерирует сам NoNetPass из каталога шлюзов:
 
 ```sh
-nonetpass router-config mikrotik  > nonetpass.rsc       # списки и правила на каждый шлюз
+nonetpass router-config mikrotik  > nonetpass.rsc       # списки, walled garden и правила на каждый шлюз
 nonetpass router-config nftables  > /etc/nonetpass/sets.nft
 nonetpass router-config ipset     > /opt/etc/ndm/netfilter.d/50-nonetpass.sh
 ```
 
 Готовые файлы лежат в [`deploy/`](deploy/):
-[MikroTik `.rsc`](deploy/mikrotik/nonetpass.rsc),
+[MikroTik `.rsc` и пошаговая инструкция](deploy/mikrotik/README.md),
 [OpenWrt fw4 и procd](deploy/openwrt/),
 [Keenetic Entware](deploy/keenetic/),
 [systemd](deploy/systemd/nonetpass.service), [`Dockerfile`](Dockerfile).
 
 > На роутерах с MIPS FastAPI не ставится (нет сборок pydantic-core). Для них
 > NoNetPass запускается на отдельной машине, а роутер управляется по API.
+
+### MikroTik с Captive Portal провайдера
+
+Настройка MikroTik построена на инструкции провайдера Captive Portal
+(Hotspot + RADIUS, страница входа провайдера, сеть `192.168.110.0/24`,
+сервер `hotspot1`). Сначала роутер настраивается по шагам 1–6 провайдера,
+затем добавляется NoNetPass ([шаги 7–9](deploy/mikrotik/README.md)):
+
+- страницы входа провайдер держит открытыми в walled garden, они служат
+  узлами-триггерами шлюзов (`id.vk.ru`, `id.sber.ru`, `passport.yandex.ru`,
+  `oauth.yandex.ru`, `id.alfabank.ru`, `*.gosuslugi.ru`);
+- окна для гостей, ещё не прошедших вход, открываются правилами
+  `/ip hotspot walled-garden ip` по спискам `nonetpass-clients-<шлюз>` с
+  таймаутом: Hotspot перехватывает их трафик раньше обычного файрвола;
+- портал NoNetPass доступен до входа (`http://nonetpass.lan:8080/`), а
+  трафик к нему исключён из masquerade Hotspot, чтобы NoNetPass видел
+  настоящий IP устройства;
+- службы `api` и `api-ssl` остаются отключёнными, как требует провайдер:
+  NoNetPass ходит в роутер через REST по `www-ssl` и только со своего адреса.
 
 ## Каталог шлюзов
 

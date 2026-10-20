@@ -10,7 +10,7 @@ def test_default_catalog_windows():
     catalog = load_catalog()
     verify = {g.id for g in catalog.all if g.kind == VERIFY}
     pay = {g.id for g in catalog.all if g.kind == PAY}
-    assert verify == {"vk", "sber-id", "yandex-id", "alfa-id"}
+    assert verify == {"vk", "sber-id", "yandex-id", "alfa-id", "gosuslugi"}
     assert pay == {"sber-pay", "alfa-pay", "vtb-pay", "tbank-pay"}
     assert all(g.window == 20 for g in catalog.all if g.kind == VERIFY)
     assert all(g.window == 60 for g in catalog.all if g.kind == PAY)
@@ -39,3 +39,13 @@ def test_gates_file_rejects_bad_kind(tmp_path):
     path.write_text(json.dumps([{"id": "x", "name": "X", "kind": "other", "targets": ["a"]}]))
     with pytest.raises(ValueError):
         load_catalog(gates_file=str(path))
+
+
+def test_provider_sso_hosts_trigger_gates():
+    # Узлы страниц входа из walled garden инструкции провайдера Captive Portal.
+    catalog = load_catalog()
+    assert catalog.for_host("id.vk.ru").id == "vk"
+    assert catalog.for_host("id.sber.ru").id == "sber-id"
+    assert catalog.for_host("oauth.yandex.ru").id == "yandex-id"
+    assert catalog.for_host("id.alfabank.ru").id == "alfa-id"
+    assert catalog.for_host("esia.gosuslugi.ru").id == "gosuslugi"

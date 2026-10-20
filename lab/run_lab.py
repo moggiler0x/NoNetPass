@@ -8,7 +8,7 @@
 Что моделируется:
 * «роутер» — таблица inet fw4 с набором пар NoNetPass и правилом-окном;
   трафик к узлам сервисов отклоняется, как в закрытом контуре;
-* сервисы — HTTPS-серверы VK (im.vk.com, api.vk.com, login.vk.com) и ВТБ
+* сервисы — HTTPS-серверы VK ID (api.vk.ru, api.vk.com, im.vk.com и др.) и ВТБ
   (3ds.vtb.ru, api.vtb.ru), отдают код подтверждения и страницу оплаты;
 * «устройства» — 127.0.0.23 (пользователь), 127.0.0.24, 127.0.0.25 и
   127.0.0.99 (соседи). Браузер каждого устройства ходит в сеть только со
@@ -48,6 +48,8 @@ HOSTS = {
     "im.vk.com": "127.0.0.50",
     "api.vk.com": "127.0.0.51",
     "login.vk.com": "127.0.0.53",
+    "api.vk.ru": "127.0.0.54",
+    "login.vk.ru": "127.0.0.55",
     "online.vtb.ru": "127.0.0.62",
     "3ds.vtb.ru": "127.0.0.60",
     "api.vtb.ru": "127.0.0.61",
@@ -56,7 +58,7 @@ BODIES = {
     "vk": "Код подтверждения VK: 482913",
     "vtb": "ВТБ: подтверждение платежа 1 290 ₽",
 }
-SERVED = {"im.vk.com": "vk", "api.vk.com": "vk", "login.vk.com": "vk", "3ds.vtb.ru": "vtb", "api.vtb.ru": "vtb"}
+SERVED = {"api.vk.ru": "vk", "login.vk.ru": "vk", "im.vk.com": "vk", "api.vk.com": "vk", "login.vk.com": "vk", "3ds.vtb.ru": "vtb", "api.vtb.ru": "vtb"}
 USER, PAYER, LATE, NEIGHBOUR = "127.0.0.23", "127.0.0.24", "127.0.0.25", "127.0.0.99"
 PORT = 8080
 VERIFY_WINDOW, PAY_WINDOW = 20, 60
@@ -264,7 +266,7 @@ def open_portal(browser, device: Device, dark: bool = True):
 
 
 def to_gates(page) -> None:
-    page.evaluate("window.scrollTo(0, document.querySelector('main').offsetTop - 24)")
+    page.evaluate("window.scrollTo({top: document.querySelector('main').offsetTop - 24, behavior: 'instant'})")
     page.wait_for_timeout(500)
 
 
