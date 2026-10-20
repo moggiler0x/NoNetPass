@@ -6,7 +6,9 @@ import hmac
 import logging
 from pathlib import Path
 
-from fastapi import Depends, FastAPI, Header, HTTPException, Request, WebSocket
+import anyio
+
+from fastapi import Depends, FastAPI, Header, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
@@ -211,10 +213,14 @@ async def _pump(websocket: WebSocket, queue: asyncio.Queue) -> None:
         while True:
             await websocket.send_json(await queue.get())
 
-    tasks = [asyncio.create_task(receiver()), asyncio.create_task(sender())]
-    try:
-        await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
-    finally:
-        for task in tasks:
-            task.cancel()
-        await asyncio.gather(*tasks, return_exceptions=True)
+    # Группа задач anyio, а не голые asyncio-задачи: так отмена со стороны
+    # сервера (и TestClient) корректно проходит через обе половины.
+    async with anyio.create_task_group() as tg:
+
+        async def run(fn) -> None:
+            with contextlib.suppress(WebSocketDisconnect, RuntimeError):
+                await fn()
+            tg.cancel_scope.cancel()
+
+        tg.start_soon(run, receiver)
+        tg.start_soon(run, sender)
