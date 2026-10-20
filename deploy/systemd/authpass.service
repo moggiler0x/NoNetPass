@@ -1,0 +1,15 @@
+[Unit]
+Description=AuthPass
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+EnvironmentFile=/etc/authpass.env
+ExecStart=/opt/authpass/.venv/bin/authpass --port 8080
+WorkingDirectory=/var/lib/authpass
+Restart=on-failure
+DynamicUser=yes
+StateDirectory=authpass
+
+[Install]
+WantedBy=multi-user.target

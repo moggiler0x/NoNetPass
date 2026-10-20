@@ -1,0 +1,30 @@
+from __future__ import annotations
+
+from .base import DriverError, Grant, RouterDriver, validate_ipv4
+
+
+class MockDriver(RouterDriver):
+    """Драйвер в памяти для тестов и разработки без роутера."""
+
+    name = "mock"
+
+    def __init__(self, fail_grant: bool = False, fail_revoke: int = 0):
+        self.active: dict[str, Grant] = {}
+        self.calls: list[tuple[str, str]] = []
+        self.fail_grant = fail_grant
+        self.fail_revoke = fail_revoke
+
+    async def grant(self, grant: Grant) -> str:
+        validate_ipv4(grant.client_ip)
+        if self.fail_grant:
+            raise DriverError("mock: grant failed")
+        self.calls.append(("grant", grant.client_ip))
+        self.active[grant.client_ip] = grant
+        return grant.client_ip
+
+    async def revoke(self, client_ip: str, handle: str) -> None:
+        if self.fail_revoke:
+            self.fail_revoke -= 1
+            raise DriverError("mock: revoke failed")
+        self.calls.append(("revoke", client_ip))
+        self.active.pop(client_ip, None)

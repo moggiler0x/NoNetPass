@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+.venv/
+*.egg-info/
+authpass-sessions.jsonl
+authpass-keenetic-state.json
+.pytest_cache/
