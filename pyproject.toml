@@ -1,5 +1,5 @@
 [project]
-name = "authpass"
+name = "nonetpass"
 version = "0.1.0"
 description = "JIT-доступ к узлам доставки 2FA-кодов для закрытых сетей без сотовой связи"
 readme = "README.md"
@@ -15,17 +15,17 @@ dependencies = [
 dev = ["pytest>=8", "pytest-asyncio>=0.23"]
 
 [project.scripts]
-authpass = "authpass.__main__:main"
+nonetpass = "nonetpass.__main__:main"
 
 [build-system]
 requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
-include = ["authpass*"]
+include = ["nonetpass*"]
 
 [tool.setuptools.package-data]
-authpass = ["static/*"]
+nonetpass = ["static/*"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

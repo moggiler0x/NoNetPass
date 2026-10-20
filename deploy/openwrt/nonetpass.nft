@@ -1,0 +1,7 @@
+# /etc/nonetpass/sets.nft — подключается в таблицу inet fw4 (position table-pre).
+# Пары «IP клиента . IP узла шлюза» с таймаутом: окно открывает только
+# узлы выбранного шлюза.
+set nonetpass_pairs {
+    type ipv4_addr . ipv4_addr
+    flags timeout
+}

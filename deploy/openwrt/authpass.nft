@@ -1,9 +1,0 @@
-# /etc/authpass/sets.nft — подключается в таблицу inet fw4 (position table-pre).
-set authpass_clients {
-    type ipv4_addr
-    flags timeout
-}
-set authpass_targets {
-    type ipv4_addr
-    flags timeout
-}

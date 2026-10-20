@@ -1,0 +1,15 @@
+[Unit]
+Description=NoNetPass
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+EnvironmentFile=/etc/nonetpass.env
+ExecStart=/opt/nonetpass/.venv/bin/nonetpass --port 8080
+WorkingDirectory=/var/lib/nonetpass
+Restart=on-failure
+DynamicUser=yes
+StateDirectory=nonetpass
+
+[Install]
+WantedBy=multi-user.target

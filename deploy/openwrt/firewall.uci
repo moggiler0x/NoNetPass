@@ -1,11 +1,11 @@
 # Добавить в /etc/config/firewall, затем: fw4 reload
-config include 'authpass_sets'
+config include 'nonetpass_sets'
 	option type 'nftables'
-	option path '/etc/authpass/sets.nft'
+	option path '/etc/nonetpass/sets.nft'
 	option position 'table-pre'
 
-config include 'authpass_rule'
+config include 'nonetpass_rule'
 	option type 'nftables'
-	option path '/etc/authpass/rule.nft'
+	option path '/etc/nonetpass/rule.nft'
 	option position 'chain-pre'
 	option chain 'forward_lan'
