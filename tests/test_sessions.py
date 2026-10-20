@@ -67,6 +67,7 @@ async def test_cooldown_and_hourly_limit(tmp_path):
     await manager.complete(IP)
     with pytest.raises(OpenRefused, match="повторное"):
         await manager.open(IP)
+    assert manager.current(IP) is None
     manager.settings.cooldown_seconds = 0
     await manager.open(IP)
     await manager.complete(IP)

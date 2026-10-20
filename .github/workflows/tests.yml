@@ -1,0 +1,40 @@
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  unit:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python: ["3.10", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - run: pip install -e '.[dev]'
+      - run: pytest -q
+
+  lab:
+    # Сквозной сценарий на настоящем nftables в отдельном network namespace.
+    runs-on: ubuntu-latest
+    env:
+      PLAYWRIGHT_BROWSERS_PATH: /opt/ms-playwright
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: sudo apt-get update && sudo apt-get install -y nftables
+      - run: pip install -e . playwright pillow
+      - run: sudo -E "$(which python)" -m playwright install --with-deps chromium
+      - run: sudo -E unshare -nm "$(which python)" lab/run_lab.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lab-screenshots
+          path: docs/screenshots/

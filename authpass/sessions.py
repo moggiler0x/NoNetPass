@@ -88,6 +88,12 @@ class SessionManager:
 
     async def open(self, client_ip: str, source: str = "panel") -> Session:
         """Открыть окно для IP клиента (создаёт сессию, если её ещё нет)."""
+        client_ip = validate_ipv4(client_ip)
+        async with self._lock:
+            existing = self.current(client_ip)
+            if not existing or existing.state != State.OPEN:
+                # Отказ по лимиту не должен оставлять за собой новую сессию.
+                self._check_limits(client_ip)
         session = await self.detect(client_ip, source)
         async with self._lock:
             if session.state == State.OPEN:
