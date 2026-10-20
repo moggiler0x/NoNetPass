@@ -1,0 +1,115 @@
+[
+  {
+    "id": "vk",
+    "name": "VK",
+    "kind": "verify",
+    "gateways": [
+      "id.vk.com"
+    ],
+    "targets": [
+      "im.vk.com",
+      "api.vk.com",
+      "login.vk.com"
+    ],
+    "window": 20.0
+  },
+  {
+    "id": "sber-id",
+    "name": "Сбер ID",
+    "kind": "verify",
+    "gateways": [
+      "id.sber.ru",
+      "online.sberbank.ru"
+    ],
+    "targets": [
+      "api.sberbank.ru",
+      "securepayments.sberbank.ru"
+    ],
+    "window": 20.0
+  },
+  {
+    "id": "yandex-id",
+    "name": "Яндекс ID",
+    "kind": "verify",
+    "gateways": [
+      "passport.yandex.ru",
+      "id.yandex.ru"
+    ],
+    "targets": [
+      "passport.yandex.ru",
+      "api.passport.yandex.ru"
+    ],
+    "window": 20.0
+  },
+  {
+    "id": "alfa-id",
+    "name": "Альфа ID",
+    "kind": "verify",
+    "gateways": [
+      "id.alfabank.ru"
+    ],
+    "targets": [
+      "alfabank.ru",
+      "click.alfabank.ru",
+      "api.alfabank.ru"
+    ],
+    "window": 20.0
+  },
+  {
+    "id": "sber-pay",
+    "name": "Сбер",
+    "kind": "pay",
+    "gateways": [
+      "securepayments.sberbank.ru",
+      "3dsec.sberbank.ru"
+    ],
+    "targets": [
+      "securepayments.sberbank.ru",
+      "api.sberbank.ru"
+    ],
+    "window": 60.0
+  },
+  {
+    "id": "alfa-pay",
+    "name": "Альфа-Банк",
+    "kind": "pay",
+    "gateways": [
+      "pay.alfabank.ru",
+      "web.rbsuat.com"
+    ],
+    "targets": [
+      "pay.alfabank.ru",
+      "click.alfabank.ru"
+    ],
+    "window": 60.0
+  },
+  {
+    "id": "vtb-pay",
+    "name": "ВТБ",
+    "kind": "pay",
+    "gateways": [
+      "3ds.vtb.ru",
+      "online.vtb.ru"
+    ],
+    "targets": [
+      "3ds.vtb.ru",
+      "api.vtb.ru"
+    ],
+    "window": 60.0
+  },
+  {
+    "id": "tbank-pay",
+    "name": "Т-Банк",
+    "kind": "pay",
+    "gateways": [
+      "secure.tbank.ru",
+      "secure.tinkoff.ru",
+      "id.tbank.ru"
+    ],
+    "targets": [
+      "secure.tbank.ru",
+      "api.tbank.ru"
+    ],
+    "window": 60.0
+  }
+]

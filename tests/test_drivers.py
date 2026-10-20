@@ -4,22 +4,27 @@ import json
 import httpx
 import pytest
 
-from authpass.config import Settings
-from authpass.detect import is_gateway, parse_dnsmasq_line
-from authpass.drivers import DRIVERS, DriverError, Grant, build_driver
-from authpass.drivers.keenetic import KeeneticDriver, challenge_password
-from authpass.drivers.local import IpsetDriver, NftablesDriver
-from authpass.drivers.mikrotik import (
+from nonetpass.config import Settings
+from nonetpass.detect import parse_dnsmasq_line
+from nonetpass.gates import load_catalog
+from nonetpass.drivers import DRIVERS, DriverError, Grant, build_driver
+from nonetpass.drivers.keenetic import KeeneticDriver, challenge_password
+from nonetpass.drivers.local import IpsetDriver, NftablesDriver
+from nonetpass.drivers.mikrotik import (
     MikroTikApiDriver,
     MikroTikRestDriver,
     encode_length,
     encode_sentence,
     read_length,
 )
-from authpass.drivers.openwrt import OpenWrtDriver
-from authpass.drivers.opnsense import OPNsenseDriver
+from nonetpass.drivers.openwrt import OpenWrtDriver
+from nonetpass.drivers.opnsense import OPNsenseDriver
 
-GRANT = Grant("192.168.1.23", ("im.vk.com", "api.vk.com"), 60, "authpass abc")
+GRANT = Grant("192.168.1.23", ("im.vk.com", "api.vk.com"), 60, "nonetpass abc", gate="vk")
+
+
+async def fake_resolver(hosts):
+    return ["87.240.1.1", "87.240.1.2"]
 
 
 async def test_mikrotik_rest():
@@ -33,10 +38,10 @@ async def test_mikrotik_rest():
             return httpx.Response(201, json={".id": "*1A"})
         return httpx.Response(204)
 
-    driver = MikroTikRestDriver("https://r", "u", "p", "authpass-clients", transport=httpx.MockTransport(handler))
+    driver = MikroTikRestDriver("https://r", "u", "p", "nonetpass-clients", transport=httpx.MockTransport(handler))
     assert await driver.grant(GRANT) == "*1A"
     body = json.loads(seen[1][2])
-    assert body == {"list": "authpass-clients", "address": "192.168.1.23", "timeout": "70s", "comment": "authpass abc"}
+    assert body == {"list": "nonetpass-clients-vk", "address": "192.168.1.23", "timeout": "70s", "comment": "nonetpass abc"}
     await driver.revoke("192.168.1.23", "*1A")
     assert seen[-1][:2] == ("DELETE", "/rest/ip/firewall/address-list/*1A")
 
@@ -83,13 +88,13 @@ async def test_mikrotik_api_against_fake_router():
     server = await asyncio.start_server(handle, "127.0.0.1", 0)
     port = server.sockets[0].getsockname()[1]
     async with server:
-        driver = MikroTikApiDriver(f"api://127.0.0.1:{port}", "admin", "pw", "authpass-clients")
+        driver = MikroTikApiDriver(f"api://127.0.0.1:{port}", "admin", "pw", "nonetpass-clients")
         assert await driver.grant(GRANT) == "*2B"
         await driver.revoke("192.168.1.23", "*2B")  # «no such item» не ошибка
     commands = [w for w in received if w[0] != "/login"]
     assert commands[1] == [
-        "/ip/firewall/address-list/add", "=list=authpass-clients", "=address=192.168.1.23",
-        "=timeout=70s", "=comment=authpass abc",
+        "/ip/firewall/address-list/add", "=list=nonetpass-clients-vk", "=address=192.168.1.23",
+        "=timeout=70s", "=comment=nonetpass abc",
     ]
     assert ["/login", "=name=admin", "=password=pw"] in received
 
@@ -114,17 +119,17 @@ async def test_keenetic_auth_and_acl(tmp_path):
         return ["87.240.1.1", "87.240.1.2"]
 
     driver = KeeneticDriver(
-        "http://r", "admin", "pw", "authpass", state_file=str(tmp_path / "s.json"),
+        "http://r", "admin", "pw", "nonetpass", state_file=str(tmp_path / "s.json"),
         resolver=resolver, transport=httpx.MockTransport(handler),
     )
     handle = await driver.grant(GRANT)
     assert calls[0] == [
-        "access-list authpass permit ip 192.168.1.23 255.255.255.255 87.240.1.1 255.255.255.255",
-        "access-list authpass permit ip 192.168.1.23 255.255.255.255 87.240.1.2 255.255.255.255",
+        "access-list nonetpass permit ip 192.168.1.23 255.255.255.255 87.240.1.1 255.255.255.255",
+        "access-list nonetpass permit ip 192.168.1.23 255.255.255.255 87.240.1.2 255.255.255.255",
     ]
     assert json.loads((tmp_path / "s.json").read_text()) == {"192.168.1.23": ["87.240.1.1", "87.240.1.2"]}
     await driver.revoke("192.168.1.23", handle)
-    assert calls[-1][0].startswith("access-list authpass no permit ip 192.168.1.23")
+    assert calls[-1][0].startswith("access-list nonetpass no permit ip 192.168.1.23")
     assert json.loads((tmp_path / "s.json").read_text()) == {}
 
 
@@ -136,10 +141,10 @@ async def test_keenetic_cleanup_stale(tmp_path):
         calls.append(json.loads(request.content)[0]["parse"])
         return httpx.Response(200, json=[{"parse": {}}])
 
-    driver = KeeneticDriver("http://127.0.0.1:79", None, None, "authpass", state_file=str(tmp_path / "s.json"),
+    driver = KeeneticDriver("http://127.0.0.1:79", None, None, "nonetpass", state_file=str(tmp_path / "s.json"),
                             transport=httpx.MockTransport(handler))
     assert await driver.cleanup_stale() == 1
-    assert calls == ["access-list authpass no permit ip 192.168.1.5 255.255.255.255 1.1.1.1 255.255.255.255"]
+    assert calls == ["access-list nonetpass no permit ip 192.168.1.5 255.255.255.255 1.1.1.1 255.255.255.255"]
 
 
 async def test_openwrt_ubus():
@@ -153,14 +158,18 @@ async def test_openwrt_ubus():
             return httpx.Response(200, json={"result": [0, {"ubus_rpc_session": "S"}]})
         return httpx.Response(200, json={"result": [0, {"code": 0}]})
 
-    driver = OpenWrtDriver("http://r", "authpass", "pw", "authpass_clients", transport=httpx.MockTransport(handler))
-    await driver.grant(GRANT)
+    driver = OpenWrtDriver("http://r", "nonetpass", "pw", "nonetpass_pairs",
+                           transport=httpx.MockTransport(handler), resolver=fake_resolver)
+    handle = await driver.grant(GRANT)
     assert calls[1] == ("file", "exec", {
         "command": "/usr/sbin/nft",
-        "params": ["add", "element", "inet", "fw4", "authpass_clients", "{ 192.168.1.23 timeout 70s }"],
+        "params": ["add", "element", "inet", "fw4", "nonetpass_pairs",
+                   "{ 192.168.1.23 . 87.240.1.1 timeout 70s, 192.168.1.23 . 87.240.1.2 timeout 70s }"],
     })
-    await driver.revoke("192.168.1.23", "192.168.1.23")
-    assert calls[-1][2]["params"][0] == "delete"
+    await driver.revoke("192.168.1.23", handle)
+    assert [c[2]["params"][-1] for c in calls[-2:]] == [
+        "{ 192.168.1.23 . 87.240.1.1 }", "{ 192.168.1.23 . 87.240.1.2 }",
+    ]
 
 
 async def test_opnsense():
@@ -170,36 +179,35 @@ async def test_opnsense():
         seen.append((request.url.path, json.loads(request.content)))
         return httpx.Response(200, json={"status": "done"})
 
-    driver = OPNsenseDriver("https://fw", "k", "s", "authpass_clients", transport=httpx.MockTransport(handler))
-    await driver.grant(GRANT)
-    await driver.revoke("192.168.1.23", "x")
+    driver = OPNsenseDriver("https://fw", "k", "s", "nonetpass_clients", transport=httpx.MockTransport(handler))
+    pay = Grant("192.168.1.23", ("3ds.vtb.ru",), 60, "c", gate="vtb-pay")
+    handle = await driver.grant(pay)
+    await driver.revoke("192.168.1.23", handle)
     assert seen == [
-        ("/api/firewall/alias_util/add/authpass_clients", {"address": "192.168.1.23"}),
-        ("/api/firewall/alias_util/delete/authpass_clients", {"address": "192.168.1.23"}),
+        ("/api/firewall/alias_util/add/nonetpass_clients_vtb_pay", {"address": "192.168.1.23"}),
+        ("/api/firewall/alias_util/delete/nonetpass_clients_vtb_pay", {"address": "192.168.1.23"}),
     ]
 
 
-async def test_local_drivers_argv():
+async def test_local_drivers_pairs():
     calls = []
 
     async def runner(*argv):
         calls.append(argv)
         return (1, "Error: No such file or directory") if argv[1] == "delete" else (0, "")
 
-    async def resolver(hosts):
-        return ["87.240.1.1", "87.240.1.2"]
-
-    nft = NftablesDriver("authpass_clients", runner=runner, resolver=resolver)
-    await nft.grant(GRANT)
-    await nft.revoke("192.168.1.23", "")
-    ipset = IpsetDriver("authpass_clients", targets_set=None, runner=runner)
+    nft = NftablesDriver("nonetpass_pairs", runner=runner, resolver=fake_resolver)
+    handle = await nft.grant(GRANT)
+    await nft.revoke("192.168.1.23", handle)  # «No such file» не ошибка
+    ipset = IpsetDriver("nonetpass_pairs", runner=runner, resolver=fake_resolver)
     await ipset.grant(GRANT)
     assert calls == [
-        ("nft", "add", "element", "inet", "fw4", "authpass_targets",
-         "{ 87.240.1.1 timeout 3600s, 87.240.1.2 timeout 3600s }"),
-        ("nft", "add", "element", "inet", "fw4", "authpass_clients", "{ 192.168.1.23 timeout 70s }"),
-        ("nft", "delete", "element", "inet", "fw4", "authpass_clients", "{ 192.168.1.23 }"),
-        ("ipset", "add", "authpass_clients", "192.168.1.23", "timeout", "70", "-exist"),
+        ("nft", "add", "element", "inet", "fw4", "nonetpass_pairs",
+         "{ 192.168.1.23 . 87.240.1.1 timeout 70s, 192.168.1.23 . 87.240.1.2 timeout 70s }"),
+        ("nft", "delete", "element", "inet", "fw4", "nonetpass_pairs", "{ 192.168.1.23 . 87.240.1.1 }"),
+        ("nft", "delete", "element", "inet", "fw4", "nonetpass_pairs", "{ 192.168.1.23 . 87.240.1.2 }"),
+        ("ipset", "add", "nonetpass_pairs", "192.168.1.23,87.240.1.1", "timeout", "70", "-exist"),
+        ("ipset", "add", "nonetpass_pairs", "192.168.1.23,87.240.1.2", "timeout", "70", "-exist"),
     ]
 
 
@@ -221,6 +229,8 @@ def test_dnsmasq_parsing():
     line = "Oct 20 18:00:01 dnsmasq[123]: query[A] id.vk.com from 192.168.1.23"
     assert parse_dnsmasq_line(line) == ("id.vk.com", "192.168.1.23")
     assert parse_dnsmasq_line("dnsmasq[1]: reply id.vk.com is 1.2.3.4") is None
-    assert is_gateway("id.vk.com", ("id.vk.com",))
-    assert is_gateway("login.id.vk.com", ("id.vk.com",))
-    assert not is_gateway("notid.vk.com", ("id.vk.com",))
+    catalog = load_catalog()
+    assert catalog.for_host("id.vk.com").id == "vk"
+    assert catalog.for_host("login.id.vk.com").id == "vk"
+    assert catalog.for_host("notid.vk.com") is None
+    assert catalog.for_host("secure.tbank.ru").id == "tbank-pay"

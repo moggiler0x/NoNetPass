@@ -1,0 +1,2 @@
+# /etc/nonetpass/rule.nft — подключается в начало цепочки forward_lan.
+ip saddr . ip daddr @nonetpass_pairs counter accept comment "nonetpass: JIT окно"

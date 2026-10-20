@@ -1,2 +1,0 @@
-# /etc/authpass/rule.nft — подключается в начало цепочки forward_lan.
-ip saddr @authpass_clients ip daddr @authpass_targets counter accept comment "authpass: JIT окно"

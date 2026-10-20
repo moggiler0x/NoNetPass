@@ -1,0 +1,14 @@
+#!/bin/sh
+# /opt/etc/init.d/S99nonetpass — NoNetPass на Keenetic (Entware).
+
+ENABLED=yes
+PROCS=python3
+ARGS="-m nonetpass --port 8080"
+PREARGS=""
+DESC="NoNetPass"
+PATH=/opt/sbin:/opt/bin:/opt/usr/sbin:/opt/usr/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+export NONETPASS_DRIVER=ipset
+export NONETPASS_LOG_PATH=/opt/var/log/nonetpass-sessions.jsonl
+
+. /opt/etc/init.d/rc.func

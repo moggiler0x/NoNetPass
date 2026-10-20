@@ -2,6 +2,6 @@ __pycache__/
 *.pyc
 .venv/
 *.egg-info/
-authpass-sessions.jsonl
-authpass-keenetic-state.json
+nonetpass-sessions.jsonl
+nonetpass-keenetic-state.json
 .pytest_cache/

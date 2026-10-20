@@ -1,0 +1,447 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>NoNetPass</title>
+<style>
+  :root {
+    --bg: #07090e;
+    --bg2: #0d1119;
+    --card: rgba(22, 27, 38, 0.72);
+    --card-solid: #161b26;
+    --line: rgba(255, 255, 255, 0.09);
+    --line-strong: rgba(255, 255, 255, 0.18);
+    --text: #eef1f6;
+    --muted: #9aa6b8;
+    --faint: #697488;
+    --accent: #5b8cff;
+    --accent-2: #7c6cff;
+    --verify: #3ddc97;
+    --pay: #ffb23e;
+    --err: #ff6b6b;
+    --radius: 18px;
+    --gutter: 18px;
+  }
+  @media (prefers-color-scheme: light) {
+    :root:not([data-theme="dark"]) {
+      --bg: #eef1f7; --bg2: #e4e9f3; --card: rgba(255,255,255,0.82); --card-solid: #fff;
+      --line: rgba(10,20,40,0.1); --line-strong: rgba(10,20,40,0.18);
+      --text: #141925; --muted: #566072; --faint: #8893a5;
+    }
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 16px/1.5 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    -webkit-font-smoothing: antialiased; overflow-x: hidden;
+  }
+  a { color: inherit; }
+
+  /* --- Сцена с раскрытием при прокрутке --- */
+  .scroll { height: 200vh; position: relative; }
+  .stage {
+    position: sticky; top: 0; height: 100svh; display: grid; place-items: center;
+    overflow: hidden;
+  }
+  .aurora {
+    position: absolute; inset: -30% -10%; z-index: 0;
+    background:
+      radial-gradient(42% 46% at 22% 28%, rgba(91,140,255,0.42), transparent 70%),
+      radial-gradient(40% 44% at 78% 24%, rgba(124,108,255,0.38), transparent 72%),
+      radial-gradient(52% 50% at 50% 92%, rgba(61,220,151,0.22), transparent 70%);
+    filter: blur(26px); will-change: transform, opacity;
+  }
+  .frame {
+    position: relative; z-index: 1; width: min(78vw, 360px); aspect-ratio: 3/4;
+    border-radius: 28px; border: 1px solid var(--line-strong);
+    background: linear-gradient(160deg, rgba(255,255,255,0.08), rgba(255,255,255,0.01));
+    box-shadow: 0 30px 80px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.12);
+    backdrop-filter: blur(6px); will-change: transform, border-radius, opacity;
+  }
+  .wordmark {
+    position: absolute; z-index: 2; inset: 0; display: flex; align-items: center;
+    justify-content: center; gap: 0.1em; pointer-events: none;
+    font-weight: 800; letter-spacing: -0.02em; font-size: clamp(38px, 13vw, 92px);
+  }
+  .word { will-change: transform; display: inline-block; }
+  .word.no { color: var(--text); }
+  .word.pass { background: linear-gradient(92deg, var(--accent), var(--accent-2));
+    -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .tagline {
+    position: absolute; z-index: 2; bottom: 17svh; left: 0; right: 0; text-align: center;
+    color: var(--muted); font-size: 15px; padding: 0 24px; will-change: opacity, transform;
+  }
+  .cue {
+    position: absolute; z-index: 2; bottom: 6svh; left: 50%; transform: translateX(-50%);
+    color: var(--faint); font-size: 12px; letter-spacing: 0.14em; text-transform: uppercase;
+    display: flex; flex-direction: column; align-items: center; gap: 6px; will-change: opacity;
+  }
+  .cue span { width: 1px; height: 26px; background: linear-gradient(var(--faint), transparent);
+    animation: drop 1.8s ease-in-out infinite; }
+  @keyframes drop { 0%,100% { opacity: .25; transform: scaleY(.6); } 50% { opacity: 1; transform: scaleY(1); } }
+
+  /* --- Портал --- */
+  main { position: relative; z-index: 3; margin-top: -42svh; padding: 0 var(--gutter) 64px;
+    max-width: 640px; margin-left: auto; margin-right: auto; }
+  .status {
+    display: flex; flex-wrap: wrap; gap: 8px 18px; justify-content: center;
+    padding: 12px 16px; margin: 0 auto 26px; width: fit-content; max-width: 100%;
+    border: 1px solid var(--line); border-radius: 100px; background: var(--card);
+    backdrop-filter: blur(10px); font-size: 13px; color: var(--muted);
+  }
+  .status b { color: var(--text); font-weight: 600; }
+  .pill { display: inline-flex; align-items: center; gap: 7px; }
+  .led { width: 8px; height: 8px; border-radius: 50%; background: var(--faint); }
+  .led.on { background: var(--verify); box-shadow: 0 0 10px var(--verify); }
+  .led.off { background: var(--err); }
+
+  .section-h { display: flex; align-items: baseline; gap: 10px; margin: 30px 4px 14px; }
+  .section-h h2 { font-size: 15px; font-weight: 700; margin: 0; letter-spacing: 0.01em; }
+  .section-h .w { font-size: 12px; color: var(--faint); }
+  .section-h .rule { flex: 1; height: 1px; background: var(--line); }
+
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 12px; }
+  .gate {
+    position: relative; text-align: left; cursor: pointer; color: var(--text);
+    border: 1px solid var(--line); border-radius: var(--radius); padding: 16px 16px 14px;
+    background: var(--card); backdrop-filter: blur(10px); overflow: hidden;
+    transition: transform .14s ease, border-color .14s ease, box-shadow .14s ease;
+  }
+  .gate::before { content: ""; position: absolute; inset: 0 auto 0 0; width: 3px;
+    background: var(--tone); opacity: .9; }
+  .gate:hover { transform: translateY(-2px); border-color: var(--line-strong);
+    box-shadow: 0 12px 30px rgba(0,0,0,0.35); }
+  .gate:active { transform: translateY(0); }
+  .gate .logo {
+    width: 38px; height: 38px; border-radius: 11px; display: grid; place-items: center;
+    font-weight: 800; font-size: 16px; color: #fff; margin-bottom: 12px;
+    background: linear-gradient(145deg, var(--tone), color-mix(in srgb, var(--tone) 55%, #000));
+  }
+  .gate .name { font-weight: 650; font-size: 15px; }
+  .gate .kind { font-size: 12px; color: var(--muted); margin-top: 2px; }
+  .gate .win { position: absolute; top: 14px; right: 14px; font-size: 11px; color: var(--faint);
+    border: 1px solid var(--line); border-radius: 100px; padding: 2px 8px; }
+
+  footer { text-align: center; color: var(--faint); font-size: 12px; margin-top: 40px; line-height: 1.7; }
+
+  /* --- Активное окно --- */
+  .overlay {
+    position: fixed; inset: 0; z-index: 20; display: none; place-items: center; padding: 24px;
+    background: rgba(4,6,10,0.72); backdrop-filter: blur(8px);
+  }
+  .overlay.show { display: grid; }
+  .sheet {
+    width: min(100%, 380px); border: 1px solid var(--line-strong); border-radius: 24px;
+    background: var(--card-solid); padding: 26px 24px 22px; text-align: center;
+    box-shadow: 0 40px 90px rgba(0,0,0,0.6); animation: rise .25s ease;
+  }
+  @keyframes rise { from { transform: translateY(14px); opacity: 0; } }
+  .sheet .svc { display: flex; align-items: center; justify-content: center; gap: 10px;
+    font-weight: 700; font-size: 18px; margin-bottom: 4px; }
+  .sheet .svc .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--tone); }
+  .sheet .lead { color: var(--muted); font-size: 14px; min-height: 2.6em; }
+  .ring { position: relative; width: 190px; height: 190px; margin: 14px auto 10px; }
+  .ring svg { transform: rotate(-90deg); width: 100%; height: 100%; }
+  .ring .track { stroke: var(--line); }
+  .ring .prog { stroke: var(--tone); stroke-linecap: round; transition: stroke-dashoffset 1s linear; }
+  .ring .num { position: absolute; inset: 0; display: grid; place-items: center;
+    font: 700 46px/1 ui-monospace, SFMono-Regular, Menlo, monospace; font-variant-numeric: tabular-nums; }
+  .reach { font-size: 13px; color: var(--muted); margin: 6px 0 16px;
+    display: inline-flex; align-items: center; gap: 8px; }
+  button.act { width: 100%; border: 0; border-radius: 13px; padding: 15px; font-size: 16px;
+    font-weight: 700; cursor: pointer; color: var(--on-tone, #fff); background: var(--tone); }
+  .ring .check { position: absolute; inset: 0; display: none; place-items: center;
+    font-size: 64px; color: var(--verify); }
+  .ring.ok .num { display: none; } .ring.ok .check { display: grid; }
+  button.act:disabled { opacity: .55; cursor: default; }
+  button.ghost { width: 100%; margin-top: 10px; border: 1px solid var(--line); border-radius: 13px;
+    padding: 12px; font-size: 14px; background: transparent; color: var(--muted); cursor: pointer; }
+  .msg { color: var(--err); font-size: 13px; min-height: 1.1em; margin-top: 10px; }
+  .targets { font-size: 12px; color: var(--faint); margin-top: 14px; }
+
+  .toast { position: fixed; z-index: 30; left: 50%; bottom: 24px; transform: translate(-50%, 20px);
+    max-width: calc(100% - 32px); padding: 12px 18px; border-radius: 12px; font-size: 14px;
+    background: var(--card-solid); border: 1px solid var(--line-strong); color: var(--err);
+    opacity: 0; pointer-events: none; transition: opacity .2s, transform .2s; }
+  .toast.show { opacity: 1; transform: translate(-50%, 0); }
+
+  @media (prefers-reduced-motion: reduce) {
+    .scroll { height: auto; } .stage { position: relative; height: auto; padding: 56px 0 10px; }
+    main { margin-top: 0; } .cue { display: none; }
+  }
+</style>
+</head>
+<body>
+  <div class="scroll">
+    <div class="stage">
+      <div class="aurora" id="aurora"></div>
+      <div class="frame" id="frame"></div>
+      <div class="wordmark">
+        <span class="word no" id="wNo">NoNet</span><span class="word pass" id="wPass">Pass</span>
+      </div>
+      <div class="tagline" id="tagline">Доступ к коду подтверждения и оплате<br>в сети без мобильной связи</div>
+      <div class="cue" id="cue">Прокрутите<span></span></div>
+    </div>
+  </div>
+
+  <main>
+    <div class="status">
+      <span class="pill"><span class="led on" id="led"></span>Связь <b id="link">…</b></span>
+      <span class="pill">Устройство <b id="ip">—</b></span>
+    </div>
+
+    <div id="verify-wrap">
+      <div class="section-h"><h2>Вход в сеть</h2><span class="w">окно 20 секунд</span><span class="rule"></span></div>
+      <div class="grid" id="verify-grid"></div>
+    </div>
+
+    <div id="pay-wrap">
+      <div class="section-h"><h2>Оплата</h2><span class="w">окно 60 секунд</span><span class="rule"></span></div>
+      <div class="grid" id="pay-grid"></div>
+    </div>
+
+    <footer>
+      Шлюз открывается только для этого устройства и только к узлам выбранного сервиса,<br>
+      затем закрывается автоматически.
+    </footer>
+  </main>
+
+  <div class="toast" id="toast" role="status"></div>
+
+  <div class="overlay" id="overlay">
+    <div class="sheet" id="sheet">
+      <div class="svc"><span class="dot"></span><span id="svc-name">—</span></div>
+      <div class="lead" id="lead"></div>
+      <div class="ring" id="ring">
+        <svg viewBox="0 0 100 100">
+          <circle class="track" cx="50" cy="50" r="44" fill="none" stroke-width="7"></circle>
+          <circle class="prog" id="prog" cx="50" cy="50" r="44" fill="none" stroke-width="7"
+                  stroke-dasharray="276.46" stroke-dashoffset="0"></circle>
+        </svg>
+        <div class="num" id="num">0:00</div>
+        <div class="check">✓</div>
+      </div>
+      <div class="reach"><span class="led" id="reach-led"></span><span id="reach">узлы закрыты</span></div>
+      <button class="act" id="open">Открыть шлюз</button>
+      <button class="act" id="done">Я ввёл код</button>
+      <button class="ghost" id="close">Закрыть</button>
+      <div class="msg" id="msg"></div>
+      <div class="targets" id="targets"></div>
+    </div>
+  </div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const CIRC = 2 * Math.PI * 44;
+const TONES = { vk: "#4a76d6", "sber-id": "#21a038", "yandex-id": "#ff3333", "alfa-id": "#ef3124",
+  "sber-pay": "#21a038", "alfa-pay": "#ef3124", "vtb-pay": "#0a2896", "tbank-pay": "#ffdd2d" };
+const ABBR = { vk: "VK", "sber-id": "С", "yandex-id": "Я", "alfa-id": "А",
+  "sber-pay": "С", "alfa-pay": "А", "vtb-pay": "ВТ", "tbank-pay": "Т" };
+
+let state = { gates: [], session: null, client_ip: "—" };
+let gatesById = {};
+let activeGate = null, tick = null, probe = null;
+
+function onTone(hex) {
+  const n = parseInt(hex.slice(1), 16);
+  const [r, g, b] = [(n >> 16) & 255, (n >> 8) & 255, n & 255].map((c) => {
+    c /= 255; return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+  });
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b > 0.4 ? "#10141c" : "#ffffff";
+}
+
+function fmt(sec) {
+  sec = Math.max(0, Math.ceil(sec));
+  return Math.floor(sec / 60) + ":" + String(sec % 60).padStart(2, "0");
+}
+
+/* ----- раскрытие героя при прокрутке ----- */
+function onScroll() {
+  const vh = window.innerHeight;
+  const p = Math.min(1, Math.max(0, window.scrollY / (vh * 1.1)));
+  const ease = p * p * (3 - 2 * p);
+  $("frame").style.transform = `scale(${0.72 + ease * 0.9})`;
+  $("frame").style.borderRadius = `${28 - ease * 28}px`;
+  $("frame").style.opacity = `${1 - ease * 0.9}`;
+  $("aurora").style.transform = `scale(${1 + ease * 0.5})`;
+  $("aurora").style.opacity = `${0.9 - ease * 0.3}`;
+  $("wNo").style.transform = `translateX(${-ease * 42}vw)`;
+  $("wPass").style.transform = `translateX(${ease * 42}vw)`;
+  $("tagline").style.opacity = `${1 - ease * 1.4}`;
+  $("tagline").style.transform = `translateY(${ease * 20}px)`;
+  $("cue").style.opacity = `${1 - p * 2.5}`;
+}
+window.addEventListener("scroll", () => requestAnimationFrame(onScroll), { passive: true });
+
+/* ----- отрисовка списка шлюзов ----- */
+function gateCard(g) {
+  const tone = TONES[g.id] || "#5b8cff";
+  const el = document.createElement("button");
+  el.className = "gate";
+  el.style.setProperty("--tone", tone);
+  el.innerHTML = `<div class="logo" style="color:${onTone(tone)}">${ABBR[g.id] || g.name[0]}</div>
+    <div class="name"></div>
+    <div class="kind">${g.kind === "verify" ? "вход в сеть" : "подтверждение оплаты"}</div>
+    <div class="win">${Math.round(g.window)} с</div>`;
+  el.querySelector(".name").textContent = g.name;
+  el.onclick = () => openGate(g.id);
+  return el;
+}
+
+function renderGates() {
+  gatesById = Object.fromEntries(state.gates.map((g) => [g.id, g]));
+  const v = $("verify-grid"), p = $("pay-grid");
+  v.innerHTML = ""; p.innerHTML = "";
+  let vw = 20, pw = 60;
+  for (const g of state.gates) {
+    (g.kind === "verify" ? v : p).appendChild(gateCard(g));
+    if (g.kind === "verify") vw = Math.round(g.window); else pw = Math.round(g.window);
+  }
+  $("verify-wrap").style.display = v.children.length ? "" : "none";
+  $("pay-wrap").style.display = p.children.length ? "" : "none";
+  document.querySelector("#verify-wrap .w").textContent = "окно " + vw + " с";
+  document.querySelector("#pay-wrap .w").textContent = "окно " + pw + " с";
+}
+
+/* ----- активное окно ----- */
+function openGate(id) {
+  $("msg").textContent = "";
+  call("/api/me/open", { gate: id });
+}
+
+function showSheet(g) {
+  activeGate = g;
+  const tone = TONES[g.id] || "#5b8cff";
+  $("sheet").style.setProperty("--tone", tone);
+  $("sheet").style.setProperty("--on-tone", onTone(tone));
+  $("open").textContent = "Открыть шлюз на " + Math.round(g.window) + " с";
+  $("ring").classList.remove("ok");
+  $("svc-name").textContent = g.name;
+  $("prog").style.stroke = tone;
+  $("prog").style.transition = "";
+  $("targets").textContent = "Открыто только: " + g.targets.join(", ");
+  $("done").textContent = g.kind === "verify" ? "Я ввёл код" : "Я оплатил";
+  $("overlay").classList.add("show");
+}
+
+function hideSheet() {
+  $("overlay").classList.remove("show");
+  clearInterval(tick); stopProbe(); activeGate = null;
+}
+
+function renderSession() {
+  const s = state.session;
+  if (!s || s.state === "closed") {
+    if ($("overlay").classList.contains("show")) {
+      clearInterval(tick); stopProbe();
+      $("open").style.display = "none"; $("done").style.display = "none";
+      const done = s && s.close_reason === "code_entered";
+      $("prog").style.transition = "none";
+      $("prog").style.strokeDashoffset = done ? 0 : CIRC;
+      if (done) $("prog").style.stroke = "var(--verify)";
+      $("lead").textContent = done ? "Готово. Доступ закрыт." : "Время вышло. Доступ закрыт.";
+      $("ring").classList.toggle("ok", done);
+      if (!done) $("num").textContent = "0:00";
+      setTimeout(hideSheet, 1400);
+    }
+    return;
+  }
+  const g = gatesById[s.gate_id];
+  if (!g) return;
+  if (!$("overlay").classList.contains("show") || !activeGate || activeGate.id !== g.id) showSheet(g);
+
+  if (s.state === "detected") {
+    $("lead").textContent = g.kind === "verify"
+      ? "Вход через " + (s.host || g.name) + " обнаружен. Нажмите, когда сервис запросит код."
+      : "Нажмите, когда дойдёт до подтверждения оплаты.";
+    $("num").textContent = fmt(g.window);
+    $("prog").style.strokeDashoffset = 0;
+    $("done").style.display = "none"; $("open").style.display = ""; $("open").disabled = false;
+    clearInterval(tick); stopProbe();
+    return;
+  }
+  // open
+  $("open").style.display = "none";
+  $("done").style.display = "";
+  $("done").disabled = false;
+  $("lead").textContent = g.kind === "verify"
+    ? "Шлюз открыт. Откройте приложение и дождитесь кода."
+    : "Шлюз открыт. Подтвердите платёж в приложении банка.";
+  startProbe();
+  clearInterval(tick);
+  const end = Date.now() + (s.remaining ?? g.window) * 1000;
+  const step = () => {
+    const left = (end - Date.now()) / 1000;
+    const frac = Math.max(0, Math.min(1, left / g.window));
+    $("num").textContent = fmt(left);
+    $("prog").style.strokeDashoffset = CIRC * (1 - frac);
+  };
+  step(); tick = setInterval(step, 250);
+}
+
+async function call(path, body) {
+  $("msg").textContent = "";
+  try {
+    const r = await fetch(path, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.detail || r.statusText);
+  } catch (e) {
+    if ($("overlay").classList.contains("show")) $("msg").textContent = e.message;
+    else toast(e.message);
+  }
+}
+
+function toast(text) {
+  const t = $("toast");
+  t.textContent = text; t.classList.add("show");
+  clearTimeout(toast.timer); toast.timer = setTimeout(() => t.classList.remove("show"), 3500);
+}
+
+/* индикатор доступности: no-cors запрос завершается, только если узел пропущен файрволом */
+async function checkReach() {
+  if (!activeGate || !activeGate.targets.length) return;
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), 3000);
+  try {
+    await fetch("https://" + activeGate.targets[0] + "/?nonetpass=" + Date.now(),
+      { mode: "no-cors", signal: ctrl.signal, cache: "no-store" });
+    $("reach").textContent = "узлы доступны"; $("reach-led").className = "led on";
+  } catch {
+    $("reach").textContent = "узлы пока недоступны"; $("reach-led").className = "led off";
+  } finally { clearTimeout(t); }
+}
+function startProbe() { if (!probe) { checkReach(); probe = setInterval(checkReach, 5000); } }
+function stopProbe() { clearInterval(probe); probe = null; $("reach").textContent = "узлы закрыты"; $("reach-led").className = "led"; }
+
+/* ----- WebSocket ----- */
+function connect() {
+  const ws = new WebSocket((location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/ws");
+  let ping;
+  ws.onopen = () => { $("link").textContent = "есть"; $("led").className = "led on"; ping = setInterval(() => ws.send("ping"), 20000); };
+  ws.onclose = () => { $("link").textContent = "нет"; $("led").className = "led off"; clearInterval(ping); setTimeout(connect, 2000); };
+  ws.onmessage = (ev) => {
+    const m = JSON.parse(ev.data);
+    if (m.type === "state") {
+      state = { gates: m.gates, session: m.session, client_ip: m.client_ip };
+      $("ip").textContent = m.client_ip;
+      renderGates();
+    } else if (m.type === "session") {
+      state.session = m.session;
+    } else return;
+    renderSession();
+  };
+}
+
+$("done").onclick = () => { $("done").disabled = true; call("/api/me/done"); };
+$("open").onclick = () => { if (activeGate) { $("open").disabled = true; call("/api/me/open", { gate: activeGate.id }).then(() => { $("open").disabled = false; }); } };
+$("close").onclick = hideSheet;
+onScroll();
+connect();
+</script>
+</body>
+</html>

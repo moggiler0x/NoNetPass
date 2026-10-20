@@ -1,18 +1,19 @@
 <div align="center">
 
-# 🛡️ AuthPass
+# 🛡️ NoNetPass
 
-**2FA-Gatekeeper для закрытых сетей без сотовой связи**
+**Шлюз для входа и оплаты в сетях без мобильной связи**
 
-Открывает на роутере окно на 60 секунд только для одного устройства и только
-к узлам доставки кода подтверждения, а потом сам его закрывает.
+Пользователь выбирает сервис в портале сети, и NoNetPass на роутере открывает
+окно только для его устройства и только к узлам этого сервиса: 20 секунд на
+код подтверждения, 60 секунд на оплату. Потом окно закрывается само.
 
 [![tests](https://github.com/moggiler0x/NoNetPass/actions/workflows/tests.yml/badge.svg)](https://github.com/moggiler0x/NoNetPass/actions/workflows/tests.yml)
 ![python](https://img.shields.io/badge/python-3.10%2B-3776ab)
 ![FastAPI](https://img.shields.io/badge/FastAPI-WebSocket-009688)
 ![routers](https://img.shields.io/badge/роутеры-MikroTik%20·%20Keenetic%20·%20OpenWrt%20·%20OPNsense-555)
 
-<img src="docs/screenshots/overview.png" alt="Панель AuthPass: вход обнаружен, шлюз открыт, шлюз закрыт" width="860">
+<img src="docs/screenshots/overview.png" alt="Портал NoNetPass: выбор сервиса, окно VK на 20 секунд, окно оплаты ВТБ на 60 секунд" width="860">
 
 </div>
 
@@ -20,90 +21,88 @@
 
 В изолированных сетях (корпоративные контуры, учебные полигоны, удалённые
 объекты) трафик жёстко фильтруется на роутере, а мобильной связи нет.
-Пользователь входит через разрешённый SSO-шлюз (`id.vk.com`), платформа
-просит 2FA-код и отправляет его во внутренний мессенджер (`vk.com`). Этот
-домен закрыт файрволом, SMS не дойдёт, и пользователь оказывается в тупике,
-пока администратор вручную не откроет доступ.
+Пользователь входит через разрешённый SSO-шлюз (VK ID, Сбер ID, Яндекс ID,
+Альфа ID), и сервис просит код подтверждения, который приходит в
+заблокированное приложение. С оплатой то же самое: банк просит подтвердить
+платёж, но его узлы закрыты, а SMS не дойдёт. Без администратора
+пользователь застревает.
 
 ## Решение
 
-AuthPass замечает, что устройство начало верификацию, и по кнопке открывает
-для него короткое окно к узлам доставки (`im.vk.com`, `api.vk.com`). Код
-приходит, пользователь его вводит, и окно закрывается. Периметр при этом не
-меняется: соседние устройства и остальные сайты остаются закрытыми,
-администратор не нужен.
+NoNetPass открывается вместе с порталом сети (captive portal). Пользователь
+выбирает сервис, и роутер на короткое время пропускает трафик этого
+устройства к узлам выбранного сервиса. Код пришёл или платёж подтверждён,
+и окно закрывается. Соседние устройства, другие сервисы и остальной интернет
+всё это время остаются закрытыми.
+
+| Шлюз | Сервисы | Окно |
+|---|---|:-:|
+| **Вход в сеть** | VK, Сбер ID, Яндекс ID, Альфа ID | **20 с** |
+| **Оплата** | Сбер, Альфа-Банк, ВТБ, Т-Банк | **60 с** |
 
 ```mermaid
 sequenceDiagram
     autonumber
     participant U as Устройство
-    participant D as DNS / прокси
-    participant A as AuthPass
+    participant P as Портал NoNetPass
     participant R as Роутер
-    participant VK as im.vk.com
-    U->>D: id.vk.com?
-    D-->>A: вход обнаружен (лог dnsmasq / вебхук)
-    A-->>U: панель: «Обнаружен вход через id.vk.com»
-    U->>A: «Получить код»
-    A->>R: IP устройства → authpass-clients (timeout 70 с)
-    U->>VK: уведомление с кодом проходит через файрвол
-    U->>A: «Я ввёл код» (или истёк таймер)
-    A->>R: удалить IP из authpass-clients
-    A->>A: запись в журнал сессий
+    participant S as Сервис (VK / банк)
+    U->>P: портал сети открывается при подключении
+    U->>P: выбор сервиса, «Открыть шлюз»
+    P->>R: пары «IP устройства · узлы сервиса» (timeout)
+    U->>S: код подтверждения или подтверждение оплаты
+    U->>P: «Я ввёл код» / «Я оплатил» (или истёк таймер)
+    P->>R: удалить пары
+    P->>P: запись в журнал сессий
 ```
 
 ## Как это выглядит
 
 | | | |
 |:-:|:-:|:-:|
-| <img src="docs/screenshots/1-closed.png" width="260"> | <img src="docs/screenshots/2-detected.png" width="260"> | <img src="docs/screenshots/3-open.png" width="260"> |
-| **Шлюз закрыт.** Обычное состояние контура | **Вход обнаружен.** Устройство обратилось к `id.vk.com` | **Шлюз открыт.** Таймер, узлы доставки доступны |
-| <img src="docs/screenshots/4-done.png" width="260"> | <img src="docs/screenshots/5-cooldown.png" width="260"> | <img src="docs/screenshots/6-open-dark.png" width="260"> |
-| **Код введён.** Доступ закрыт сразу | **Защита от злоупотреблений.** Пауза между окнами | **Тёмная тема.** Подстраивается под систему |
+| <img src="docs/screenshots/1-portal.png" width="250"> | <img src="docs/screenshots/2-gates.png" width="250"> | <img src="docs/screenshots/3-detected.png" width="250"> |
+| **Портал сети.** Заставка раскрывается при прокрутке | **Выбор сервиса.** Вход в сеть и оплата | **Вход обнаружен.** Устройство открыло `id.vk.com` |
+| <img src="docs/screenshots/4-open-verify.png" width="250"> | <img src="docs/screenshots/5-done.png" width="250"> | <img src="docs/screenshots/7-open-pay.png" width="250"> |
+| **Шлюз VK открыт.** 20 секунд на код | **Код введён.** Доступ закрыт сразу | **Оплата ВТБ.** 60 секунд, светлая тема |
 
-Панель работает по WebSocket и обновляется без перезагрузки. Она действует
-только для IP того устройства, с которого её открыли, поэтому открыть окно
-для чужого устройства из неё нельзя.
+Портал работает без интернета и без внешних библиотек: в закрытой сети CDN
+недоступен, поэтому всё встроено в одну страницу. Он обновляется по
+WebSocket и действует только для IP устройства, с которого открыт.
 
 ## Проверено на стенде
 
 `lab/run_lab.py` поднимает в отдельном network namespace «роутер» на
-настоящем nftables ядра Linux, HTTPS-серверы `im.vk.com` и `api.vk.com`,
-три «устройства» и AuthPass с драйвером `nftables`. Затем проходит
-сценарий в Chromium и проверяет доступ с каждого устройства. Скриншоты выше
-сняты этим стендом. Он же запускается в CI.
+настоящем nftables ядра Linux, HTTPS-серверы VK и ВТБ, четыре «устройства» и
+NoNetPass с драйвером `nftables`. Сценарий проходит в Chromium, доступ
+проверяется с каждого устройства к каждому сервису. Скриншоты выше сняты
+этим стендом, он же запускается в CI.
 
 ```text
-1. Устройство в закрытом контуре, окно закрыто
-  127.0.0.23  → im.vk.com: заблокирован (ConnectError)
-  127.0.0.99  → im.vk.com: заблокирован (ConnectError)
+3. Сервис просит код, пользователь нажимает «Открыть шлюз на 20 с»
+  127.0.0.23  → im.vk.com   ДОСТУПЕН (Код подтверждения VK: 482913)
+  127.0.0.23  → 3ds.vtb.ru  заблокирован (ConnectError)     ← другой сервис закрыт
+  127.0.0.99  → im.vk.com   заблокирован (ConnectError)     ← соседнее устройство закрыто
+  nft nonetpass_pairs: 127.0.0.23 · im.vk.com (30 с), 127.0.0.23 · api.vk.com (30 с), …
 
-2. Пользователь открывает id.vk.com (запрос виден в логе dnsmasq)
-  панель: Обнаружен вход через id.vk.com
+4. Код пришёл, пользователь нажимает «Я ввёл код»
+  127.0.0.23  → im.vk.com   заблокирован (ConnectError)
+  nft nonetpass_pairs: пусто
 
-3. Пользователь нажимает «Получить код»
-  127.0.0.23  → im.vk.com: ДОСТУПЕН (Код подтверждения VK: 482913)
-  127.0.0.99  → im.vk.com: заблокирован (ConnectError)
-  nft authpass_clients: 127.0.0.23 (timeout 40s)
+6. Другое устройство 127.0.0.24 выбирает «ВТБ» (оплата, окно 60 с)
+  127.0.0.24  → im.vk.com   заблокирован (ConnectError)
+  127.0.0.24  → 3ds.vtb.ru  ДОСТУПЕН (ВТБ: подтверждение платежа 1 290 ₽)
 
-4. Код получен, пользователь нажимает «Я ввёл код»
-  127.0.0.23  → im.vk.com: заблокирован (ConnectError)
-  nft authpass_clients: пусто
+7. Окна истекают сами
+  после 20 с:      127.0.0.25 → im.vk.com  заблокирован (ConnectError)
+  после 60 с:      127.0.0.24 → 3ds.vtb.ru заблокирован (ConnectError)
 
-5. Повторное открытие сразу же (защита от злоупотреблений)
-  панель: повторное открытие через 15 с
-
-6. Окно истекает само: устройство 127.0.0.24, окно 30 с, ничего не нажимает
-  сразу:      127.0.0.24 → im.vk.com: ДОСТУПЕН (Код подтверждения VK: 482913)
-  через 30 с: 127.0.0.24 → im.vk.com: заблокирован (ConnectError)
-
-7. Журнал сессий (/api/admin/journal)
-  18:39:16  127.0.0.23  detected, источник dnsmasq
-  18:39:16  127.0.0.23  opened
-  18:39:16  127.0.0.23  closed (code_entered)
-  18:39:17  127.0.0.24  detected, источник panel
-  18:39:17  127.0.0.24  opened
-  18:39:47  127.0.0.24  closed (expired)
+8. Журнал сессий
+  19:16:54  127.0.0.23  VK    opened
+  19:16:55  127.0.0.23  VK    closed (code_entered)
+  19:16:58  127.0.0.24  ВТБ   opened
+  19:17:01  127.0.0.25  VK    opened
+  19:17:21  127.0.0.25  VK    closed (expired)
+  19:17:58  127.0.0.24  ВТБ   closed (expired)
 ```
 
 Полный вывод: [`docs/screenshots/lab-report.txt`](docs/screenshots/lab-report.txt).
@@ -116,91 +115,124 @@ sudo unshare -nm python3 lab/run_lab.py
 
 ## Возможности
 
+- **Портал сети.** Открывается вместе с captive portal, показывает сервисы
+  входа и оплаты, таймер окна и доступность узлов.
 - **Детекция сессии.** По логу запросов dnsmasq (встроено), вебхуком
-  `POST /api/detect` от прокси, своего DNS или агента на устройстве, или
-  кнопкой в панели.
-- **JIT Whitelisting.** IP устройства добавляется в список `authpass-clients`
-  на роутере. Разовое правило разрешает трафик из этого списка только к узлам
-  доставки.
-- **Auto-Revoke.** Окно закрывается по кнопке «Я ввёл код», по таймеру, при
-  остановке сервиса или администратором. Если роутер не ответил, откат
-  повторяется. Где роутер поддерживает таймаут записи, окно закроется даже
-  при падении AuthPass.
+  `POST /api/detect` от прокси, своего DNS или агента, или выбором в портале.
+  По узлу запроса NoNetPass сам определяет сервис.
+- **Точное окно.** Доступ открывается только для пары «устройство · узлы
+  выбранного сервиса». Окно VK не открывает банк, окно банка не открывает VK.
+- **Auto-Revoke.** Окно закрывается по кнопке, по таймеру, при остановке
+  сервиса или администратором. Если роутер не ответил, откат повторяется.
+  Где роутер поддерживает таймаут записи, окно закроется даже при падении
+  NoNetPass.
 - **Журнал сессий.** Каждое изменение состояния пишется в JSON Lines.
 - **Ограничения.** Одно окно на устройство, пауза между окнами, лимит в час,
   строгая проверка IPv4 перед любой командой роутеру.
 
 ## Роутеры
 
-AuthPass запускается **прямо на роутере** или **на отдельной машине**
+NoNetPass запускается **прямо на роутере** или **на отдельной машине**
 (Raspberry Pi, сервер, контейнер), которая управляет роутером по API.
 
-| Роутер | На роутере | С отдельной машины | Таймаут на роутере |
-|---|---|---|:-:|
-| **MikroTik** RouterOS 7 | контейнер ([инструкция](deploy/mikrotik/container.md)) | `mikrotik` (REST) | ✅ |
-| **MikroTik** RouterOS 6 | — | `mikrotik-api` (API 8728/8729) | ✅ |
-| **Keenetic** | Entware + `ipset` ([инструкция](deploy/keenetic/README.md)) | `keenetic` (RCI) | ✅ / ❌\* |
-| **OpenWrt** 22.03+ | `nftables` ([инструкция](deploy/openwrt/README.md)) | `openwrt` (ubus) | ✅ |
-| **ASUS Merlin, DD-WRT**, OpenWrt fw3, Linux с iptables | `ipset` | — | ✅ |
-| **OPNsense** | — | `opnsense` (API, алиас) | ❌\* |
+| Роутер | На роутере | С отдельной машины | Как задано окно | Таймаут на роутере |
+|---|---|---|---|:-:|
+| **MikroTik** RouterOS 7 | контейнер ([инструкция](deploy/mikrotik/container.md)) | `mikrotik` (REST) | список на шлюз | ✅ |
+| **MikroTik** RouterOS 6 | — | `mikrotik-api` (API 8728/8729) | список на шлюз | ✅ |
+| **Keenetic** | Entware + `ipset` ([инструкция](deploy/keenetic/README.md)) | `keenetic` (RCI) | пары / ACL | ✅ / ❌\* |
+| **OpenWrt** 22.03+ | `nftables` ([инструкция](deploy/openwrt/README.md)) | `openwrt` (ubus) | пары | ✅ |
+| **ASUS Merlin, DD-WRT**, OpenWrt fw3, Linux с iptables | `ipset` | — | пары | ✅ |
+| **OPNsense** | — | `opnsense` (API) | алиас на шлюз | ❌\* |
 
-\* Без таймаута на роутере окно закрывает только AuthPass, с повторами.
+\* Без таймаута на роутере окно закрывает только NoNetPass, с повторами.
 У Keenetic через RCI правила не сохраняются в startup-config и чистятся при
-следующем старте AuthPass.
+следующем старте NoNetPass.
 
-Конфиги для разовой настройки роутера лежат в [`deploy/`](deploy/):
-[MikroTik `.rsc`](deploy/mikrotik/authpass.rsc),
+Разовую настройку роутера генерирует сам NoNetPass из каталога шлюзов:
+
+```sh
+nonetpass router-config mikrotik  > nonetpass.rsc       # списки и правила на каждый шлюз
+nonetpass router-config nftables  > /etc/nonetpass/sets.nft
+nonetpass router-config ipset     > /opt/etc/ndm/netfilter.d/50-nonetpass.sh
+```
+
+Готовые файлы лежат в [`deploy/`](deploy/):
+[MikroTik `.rsc`](deploy/mikrotik/nonetpass.rsc),
 [OpenWrt fw4 и procd](deploy/openwrt/),
 [Keenetic Entware](deploy/keenetic/),
-[systemd](deploy/systemd/authpass.service), [`Dockerfile`](Dockerfile).
+[systemd](deploy/systemd/nonetpass.service), [`Dockerfile`](Dockerfile).
 
 > На роутерах с MIPS FastAPI не ставится (нет сборок pydantic-core). Для них
-> AuthPass запускается на отдельной машине, а роутер управляется по API.
+> NoNetPass запускается на отдельной машине, а роутер управляется по API.
+
+## Каталог шлюзов
+
+Каталог по умолчанию лежит в [`nonetpass/gates.py`](nonetpass/gates.py), его
+копия для правки — [`deploy/gates.example.json`](deploy/gates.example.json).
+Свой каталог подключается через `NONETPASS_GATES_FILE`:
+
+```json
+[
+  {"id": "vk", "name": "VK", "kind": "verify",
+   "gateways": ["id.vk.com"], "targets": ["im.vk.com", "api.vk.com"]},
+  {"id": "vtb-pay", "name": "ВТБ", "kind": "pay",
+   "gateways": ["3ds.vtb.ru"], "targets": ["3ds.vtb.ru", "api.vtb.ru"]}
+]
+```
+
+`gateways` — узлы, обращение к которым начинает сессию; `targets` — узлы,
+которые открываются на время окна; `kind` — `verify` (20 с) или `pay` (60 с).
+
+> Списки узлов по умолчанию собраны по основным доменам сервисов. Перед
+> запуском сверьте их со своей сетью: адреса доставки пушей, серверов
+> 3-D Secure и API у платформ и банков меняются. Если код приходит
+> push-уведомлением в мобильное приложение, добавьте узлы push-сервиса
+> (например, `mtalk.google.com` для Android).
 
 ## Быстрый старт
 
 ```sh
 pip install .
-cp deploy/authpass.env.example .env   # драйвер и доступ к роутеру
+cp deploy/nonetpass.env.example .env   # драйвер и доступ к роутеру
 set -a; . ./.env; set +a
-authpass --port 8080                  # панель: http://<адрес>:8080/
+nonetpass --port 8080                  # портал: http://<адрес>:8080/
 ```
 
-Docker: `docker build -t authpass . && docker run --env-file .env -p 8080:8080 authpass`.
+Docker: `docker build -t nonetpass . && docker run --env-file .env -p 8080:8080 nonetpass`.
 
-Без роутера: `AUTHPASS_DRIVER=mock authpass`, окна открываются в памяти.
+Без роутера: `NONETPASS_DRIVER=mock nonetpass`, окна открываются в памяти.
+
+Чтобы портал открывался сам при подключении к Wi-Fi, направьте на него
+captive portal роутера (страницу авторизации гостевой сети).
 
 ## Настройки
 
 | Переменная | По умолчанию | Что задаёт |
 |---|---|---|
-| `AUTHPASS_DRIVER` | `mock` | драйвер роутера |
-| `AUTHPASS_ROUTER_URL`, `_USER`, `_PASSWORD` | | доступ к роутеру (для OPNsense: API key и secret) |
-| `AUTHPASS_ROUTER_VERIFY_TLS` | `true` | проверять сертификат роутера |
-| `AUTHPASS_CLIENT_LIST` | `authpass-clients` | список клиентов (для nft и ipset `-` меняется на `_`) |
-| `AUTHPASS_WINDOW_SECONDS` | `60` | длительность окна |
-| `AUTHPASS_GATEWAY_HOSTS` | `id.vk.com` | узлы SSO, с которых начинается сессия |
-| `AUTHPASS_TARGET_HOSTS` | `im.vk.com,api.vk.com` | узлы доставки кода |
-| `AUTHPASS_COOLDOWN_SECONDS`, `_MAX_OPENS_PER_HOUR` | `15`, `6` | ограничения |
-| `AUTHPASS_DETECT_TOKEN`, `AUTHPASS_ADMIN_TOKEN` | | Bearer-токены |
-| `AUTHPASS_DNS_LOG_PATH` | | лог dnsmasq для детекции |
-| `AUTHPASS_TRUST_FORWARDED` | `false` | брать IP из `X-Forwarded-For` |
-| `AUTHPASS_DRIVER_OPT_*` | | опции драйвера: `FAMILY`, `TABLE`, `TARGETS_SET`, `ACL`, `GRANT_CMD`, `REVOKE_CMD`, `STATE_FILE` |
-
-> Если код приходит push-уведомлением в мобильное приложение, а не в веб-чат,
-> добавьте в `AUTHPASS_TARGET_HOSTS` узлы push-сервиса (например,
-> `mtalk.google.com` для Android).
+| `NONETPASS_DRIVER` | `mock` | драйвер роутера |
+| `NONETPASS_ROUTER_URL`, `_USER`, `_PASSWORD` | | доступ к роутеру (для OPNsense: API key и secret) |
+| `NONETPASS_ROUTER_VERIFY_TLS` | `true` | проверять сертификат роутера |
+| `NONETPASS_VERIFY_WINDOW_SECONDS` | `20` | окно шлюзов входа в сеть |
+| `NONETPASS_PAY_WINDOW_SECONDS` | `60` | окно шлюзов оплаты |
+| `NONETPASS_GATES_FILE` | | свой каталог шлюзов (JSON) |
+| `NONETPASS_CLIENT_LIST` | `nonetpass-clients` | префикс списков MikroTik и алиасов OPNsense |
+| `NONETPASS_COOLDOWN_SECONDS`, `_MAX_OPENS_PER_HOUR` | `15`, `6` | ограничения |
+| `NONETPASS_DETECT_TOKEN`, `NONETPASS_ADMIN_TOKEN` | | Bearer-токены |
+| `NONETPASS_DNS_LOG_PATH` | | лог dnsmasq для детекции |
+| `NONETPASS_TRUST_FORWARDED` | `false` | брать IP из `X-Forwarded-For` |
+| `NONETPASS_DRIVER_OPT_*` | | опции драйвера: `SET`, `FAMILY`, `TABLE`, `ACL`, `GRANT_CMD`, `REVOKE_CMD`, `STATE_FILE` |
 
 ## API
 
 | Метод | Путь | Доступ |
 |---|---|---|
-| GET | `/` | панель пользователя |
+| GET | `/` | портал |
+| GET | `/api/gates` | каталог шлюзов |
 | WS | `/ws` | события сессии для IP устройства |
 | GET | `/api/me` | состояние для IP устройства |
-| POST | `/api/me/open` | открыть окно для своего IP |
-| POST | `/api/me/done` | код введён, закрыть окно |
-| POST | `/api/detect` | детекция `{client_ip, host, source}`, токен детекции |
+| POST | `/api/me/open` | `{gate}`: открыть окно шлюза для своего IP |
+| POST | `/api/me/done` | код введён / платёж подтверждён, закрыть окно |
+| POST | `/api/detect` | детекция `{client_ip, host или gate, source}`, токен детекции |
 | GET | `/api/admin/sessions`, `/api/admin/journal` | админ |
 | POST | `/api/admin/sessions/{id}/revoke` | админ |
 | WS | `/ws/admin?token=…` | все события |
@@ -209,14 +241,16 @@ Docker: `docker build -t authpass . && docker run --env-file .env -p 8080:8080 a
 ## Устройство проекта
 
 ```text
-authpass/
-  app.py          FastAPI: панель, REST, WebSocket
+nonetpass/
+  app.py          FastAPI: портал, REST, WebSocket
+  gates.py        каталог шлюзов входа и оплаты
   sessions.py     сессии, таймеры, откат, лимиты
   detect.py       детекция по логу dnsmasq
   journal.py      журнал сессий (JSON Lines)
+  routercfg.py    генерация настройки роутера из каталога
   drivers/        mikrotik, keenetic, openwrt, opnsense, local (nftables, ipset), mock
-  static/         панель
-deploy/           конфиги роутеров, systemd
+  static/         портал
+deploy/           конфиги роутеров, systemd, пример каталога
 lab/              стенд на настоящем nftables
 tests/            pytest
 ```
@@ -231,5 +265,5 @@ pytest
 ## Дальше
 
 - **Headless Relay.** Сервер сам забирает код через изолированный шлюз и
-  показывает его в панели, не открывая доступ устройству.
-- Проверка драйверов на реальном железе MikroTik, Keenetic и OpenWrt.
+  показывает его в портале, не открывая доступ устройству.
+- Проверка драйверов и списков узлов на реальном железе и в реальных сетях.

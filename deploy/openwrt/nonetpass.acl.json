@@ -1,0 +1,12 @@
+{
+	"nonetpass": {
+		"description": "NoNetPass: управление набором nonetpass_clients через nft",
+		"read": {
+			"ubus": { "system": ["board"] }
+		},
+		"write": {
+			"ubus": { "file": ["exec"] },
+			"file": { "/usr/sbin/nft": ["exec"] }
+		}
+	}
+}
