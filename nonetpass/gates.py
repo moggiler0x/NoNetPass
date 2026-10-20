@@ -62,14 +62,20 @@ def _pay(id: str, name: str, gateways, targets, note: str = "") -> Gate:
 
 
 # Вход в сеть: SSO-сервисы, через которые сейчас можно верифицироваться.
+# Узлы-триггеры совпадают с walled garden из инструкции провайдера Captive
+# Portal (Hotspot + RADIUS): страницы входа открыты всегда, а NoNetPass на
+# 20 секунд открывает узлы, через которые приходит код подтверждения.
 VERIFY_GATES = (
-    _verify("vk", "VK", ["id.vk.com"], ["im.vk.com", "api.vk.com", "login.vk.com"]),
-    _verify("sber-id", "Сбер ID", ["id.sber.ru", "online.sberbank.ru"],
-            ["api.sberbank.ru", "securepayments.sberbank.ru"]),
-    _verify("yandex-id", "Яндекс ID", ["passport.yandex.ru", "id.yandex.ru"],
-            ["passport.yandex.ru", "api.passport.yandex.ru"]),
+    _verify("vk", "VK ID", ["id.vk.ru", "id.vk.com"],
+            ["api.vk.ru", "api.vk.com", "login.vk.ru", "login.vk.com", "im.vk.com"]),
+    _verify("sber-id", "Сбер ID", ["id.sber.ru"],
+            ["online.sberbank.ru", "api.sberbank.ru"]),
+    _verify("yandex-id", "Яндекс ID", ["passport.yandex.ru", "oauth.yandex.ru"],
+            ["api.passport.yandex.ru", "push.yandex.ru", "id.yandex.ru"]),
     _verify("alfa-id", "Альфа ID", ["id.alfabank.ru"],
-            ["alfabank.ru", "click.alfabank.ru", "api.alfabank.ru"]),
+            ["online.alfabank.ru", "click.alfabank.ru", "api.alfabank.ru"]),
+    _verify("gosuslugi", "Госуслуги", ["esia.gosuslugi.ru", "gosuslugi.ru"],
+            ["lk.gosuslugi.ru", "api.gosuslugi.ru", "gu-st.ru"]),
 )
 
 # Оплата: банки, которым нужно короткое окно на подтверждение платежа.

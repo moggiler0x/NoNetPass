@@ -32,7 +32,7 @@ def test_panel_open_and_done(tmp_path):
         assert r.json()["kind"] == "pay"
         assert driver.active["10.0.0.5"].ttl == 60
         me = client.get("/api/me", headers=headers).json()
-        assert me["session"]["gate_id"] == "sber-pay" and len(me["gates"]) == 8
+        assert me["session"]["gate_id"] == "sber-pay" and len(me["gates"]) == 9
         client.post("/api/me/done", headers=headers)
         assert driver.active == {}
 
@@ -79,7 +79,7 @@ def test_websocket_pushes_state(tmp_path):
     with client, client.websocket_connect("/ws", headers=headers) as ws:
         first = ws.receive_json()
         assert first["type"] == "state" and first["client_ip"] == "10.0.0.11"
-        assert first["session"] is None and len(first["gates"]) == 8
+        assert first["session"] is None and len(first["gates"]) == 9
         client.post("/api/me/open", json={"gate": "alfa-id"}, headers=headers)
         msgs = [ws.receive_json()["session"] for _ in range(2)]
         assert [m["state"] for m in msgs] == ["detected", "open"]
@@ -100,4 +100,4 @@ def test_healthz(tmp_path):
     client, _ = make_client(tmp_path)
     with client:
         h = client.get("/healthz").json()
-        assert h["driver"] == "mock" and h["gates"] == 8
+        assert h["driver"] == "mock" and h["gates"] == 9
