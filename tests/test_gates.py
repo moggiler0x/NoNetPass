@@ -12,8 +12,8 @@ def test_default_catalog_windows():
     pay = {g.id for g in catalog.all if g.kind == PAY}
     assert verify == {"vk", "sber-id", "yandex-id", "alfa-id", "gosuslugi"}
     assert pay == {"sber-pay", "alfa-pay", "vtb-pay", "tbank-pay"}
-    assert all(g.window == 20 for g in catalog.all if g.kind == VERIFY)
-    assert all(g.window == 60 for g in catalog.all if g.kind == PAY)
+    assert all(g.window == 120 for g in catalog.all if g.kind == VERIFY)
+    assert all(g.window == 300 for g in catalog.all if g.kind == PAY)
 
 
 def test_window_override_from_settings():
@@ -31,7 +31,7 @@ def test_gates_file(tmp_path):
     catalog = load_catalog(gates_file=str(path))
     assert [g.id for g in catalog.all] == ["corp", "bank"]
     assert catalog.for_host("sso.corp").id == "corp"
-    assert catalog.get("bank").window == 60
+    assert catalog.get("bank").window == 300
 
 
 def test_gates_file_rejects_bad_kind(tmp_path):

@@ -14,7 +14,7 @@
       "login.vk.com",
       "im.vk.com"
     ],
-    "window": 20.0
+    "window": 120.0
   },
   {
     "id": "sber-id",
@@ -27,7 +27,7 @@
       "online.sberbank.ru",
       "api.sberbank.ru"
     ],
-    "window": 20.0
+    "window": 120.0
   },
   {
     "id": "yandex-id",
@@ -42,7 +42,7 @@
       "push.yandex.ru",
       "id.yandex.ru"
     ],
-    "window": 20.0
+    "window": 120.0
   },
   {
     "id": "alfa-id",
@@ -56,7 +56,7 @@
       "click.alfabank.ru",
       "api.alfabank.ru"
     ],
-    "window": 20.0
+    "window": 120.0
   },
   {
     "id": "gosuslugi",
@@ -71,7 +71,7 @@
       "api.gosuslugi.ru",
       "gu-st.ru"
     ],
-    "window": 20.0
+    "window": 120.0
   },
   {
     "id": "sber-pay",
@@ -85,7 +85,7 @@
       "securepayments.sberbank.ru",
       "api.sberbank.ru"
     ],
-    "window": 60.0
+    "window": 300.0
   },
   {
     "id": "alfa-pay",
@@ -99,7 +99,7 @@
       "pay.alfabank.ru",
       "click.alfabank.ru"
     ],
-    "window": 60.0
+    "window": 300.0
   },
   {
     "id": "vtb-pay",
@@ -113,7 +113,7 @@
       "3ds.vtb.ru",
       "api.vtb.ru"
     ],
-    "window": 60.0
+    "window": 300.0
   },
   {
     "id": "tbank-pay",
@@ -128,6 +128,6 @@
       "secure.tbank.ru",
       "api.tbank.ru"
     ],
-    "window": 60.0
+    "window": 300.0
   }
 ]
