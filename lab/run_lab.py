@@ -14,7 +14,7 @@
   127.0.0.99 (соседи). Браузер каждого устройства ходит в сеть только со
   своего адреса;
 * NoNetPass с драйвером nftables, детекцией по логу dnsmasq и каталогом
-  шлюзов по умолчанию (вход в сеть 20 с, оплата 60 с).
+  шлюзов по умолчанию (вход в сеть 2 мин, оплата 5 мин).
 
 Скрипт проходит сценарий, проверяет доступ с каждого устройства к каждому
 сервису и снимает скриншоты портала в docs/screenshots.
@@ -61,7 +61,7 @@ BODIES = {
 SERVED = {"api.vk.ru": "vk", "login.vk.ru": "vk", "im.vk.com": "vk", "api.vk.com": "vk", "login.vk.com": "vk", "3ds.vtb.ru": "vtb", "api.vtb.ru": "vtb"}
 USER, PAYER, LATE, NEIGHBOUR = "127.0.0.23", "127.0.0.24", "127.0.0.25", "127.0.0.99"
 PORT = 8080
-VERIFY_WINDOW, PAY_WINDOW = 20, 60
+VERIFY_WINDOW, PAY_WINDOW = 120, 300
 # Свой Chromium (например, /opt/pw-browsers/chromium); иначе тот, что ставит playwright install.
 CHROMIUM = os.environ.get("CHROMIUM") or None
 
@@ -369,7 +369,7 @@ def main() -> None:
             shot(page, "6-cooldown")
             browser.close()
 
-            say(f"\n6. Другое устройство {PAYER} выбирает «ВТБ» (оплата, окно {PAY_WINDOW} с)")
+            say(f"\n6. Другое устройство {PAYER} выбирает «ВТБ» (оплата, окно {PAY_WINDOW // 60} мин)")
             browser = payer.browser(pw)
             page = open_portal(browser, payer, dark=False)
             to_gates(page)
@@ -387,10 +387,10 @@ def main() -> None:
             late_page.wait_for_selector("#reach:text-is('узлы доступны')", timeout=8000)
             say(f"  сразу:            {LATE} → im.vk.com  {reach(LATE, 'im.vk.com')}")
             late_page.wait_for_selector("#overlay", state="hidden", timeout=(VERIFY_WINDOW + 10) * 1000)
-            say(f"  после {VERIFY_WINDOW} с:      {LATE} → im.vk.com  {reach(LATE, 'im.vk.com')}")
+            say(f"  после {VERIFY_WINDOW // 60} мин:    {LATE} → im.vk.com  {reach(LATE, 'im.vk.com')}")
             say(f"  в это время ВТБ:  {PAYER} → 3ds.vtb.ru {reach(PAYER, '3ds.vtb.ru')}")
             page.wait_for_selector("#overlay", state="hidden", timeout=(PAY_WINDOW + 10) * 1000)
-            say(f"  после {PAY_WINDOW} с:      {PAYER} → 3ds.vtb.ru {reach(PAYER, '3ds.vtb.ru')}")
+            say(f"  после {PAY_WINDOW // 60} мин:    {PAYER} → 3ds.vtb.ru {reach(PAYER, '3ds.vtb.ru')}")
             say(f"  nft nonetpass_pairs: {pairs()}")
             late_browser.close()
             browser.close()

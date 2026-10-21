@@ -2,22 +2,53 @@
 
 # 🛡️ NoNetPass
 
-**Шлюз для входа и оплаты в сетях без мобильной связи**
-
-Пользователь выбирает сервис в портале сети, и NoNetPass на роутере открывает
-окно только для его устройства и только к узлам этого сервиса: 20 секунд на
-код подтверждения, 60 секунд на оплату. Потом окно закрывается само.
+**🇷🇺 [Русский](#-русский) · 🇬🇧 [English](#-english)**
 
 [![tests](https://github.com/moggiler0x/NoNetPass/actions/workflows/tests.yml/badge.svg)](https://github.com/moggiler0x/NoNetPass/actions/workflows/tests.yml)
 ![python](https://img.shields.io/badge/python-3.10%2B-3776ab)
 ![FastAPI](https://img.shields.io/badge/FastAPI-WebSocket-009688)
 ![routers](https://img.shields.io/badge/роутеры-MikroTik%20·%20Keenetic%20·%20OpenWrt%20·%20OPNsense-555)
 
-<img src="docs/screenshots/overview.png" alt="Портал NoNetPass: выбор сервиса, окно VK на 20 секунд, окно оплаты ВТБ на 60 секунд" width="860">
+<img src="docs/screenshots/overview.png" alt="Портал NoNetPass: выбор сервиса, окно VK на 2 минуты, окно оплаты ВТБ на 5 минут" width="860">
+
+<table>
+<tr>
+<td width="50%" valign="top">
+
+<b>🇷🇺 Русский</b>
+
+**Шлюз для входа и оплаты в сетях без мобильной связи.** Пользователь
+выбирает сервис в портале сети, и роутер открывает окно только для его
+устройства и только к узлам этого сервиса: 2 минуты на пуш или код
+подтверждения, 5 минут на оплату.
+
+➜ [Суть проекта](#суть-проекта)<br>
+➜ [Установка портала на ClientPulse](#установка-на-clientpulse)
+
+</td>
+<td width="50%" valign="top">
+
+<b>🇬🇧 English</b>
+
+**A sign-in and payment gate for networks without mobile service.** The
+user picks a service on the network portal, and the router opens a window
+for that device only and only to that service's hosts: 2 minutes for a
+push or confirmation code, 5 minutes for a payment.
+
+➜ [What it is](#what-it-is)<br>
+➜ [ClientPulse portal setup](#clientpulse-portal-setup)
+
+</td>
+</tr>
+</table>
 
 </div>
 
-## Проблема
+## 🇷🇺 Русский
+
+## Суть проекта
+
+### Проблема
 
 В изолированных сетях (корпоративные контуры, учебные полигоны, удалённые
 объекты) трафик жёстко фильтруется на роутере, а мобильной связи нет.
@@ -27,18 +58,19 @@
 платёж, но его узлы закрыты, а SMS не дойдёт. Без администратора
 пользователь застревает.
 
-## Решение
+### Решение
 
 NoNetPass открывается вместе с порталом сети (captive portal). Пользователь
-выбирает сервис, и роутер на короткое время пропускает трафик этого
-устройства к узлам выбранного сервиса. Код пришёл или платёж подтверждён,
+выбирает сервис, и роутер на время окна пропускает трафик этого
+устройства к узлам выбранного сервиса: 2 минуты, чтобы пришёл пуш или
+код, и 5 минут на подтверждение оплаты. Код пришёл или платёж подтверждён,
 и окно закрывается. Соседние устройства, другие сервисы и остальной интернет
 всё это время остаются закрытыми.
 
 | Шлюз | Сервисы | Окно |
 |---|---|:-:|
-| **Вход в сеть** | VK ID, Сбер ID, Яндекс ID, Альфа ID, Госуслуги | **20 с** |
-| **Оплата** | Сбер, Альфа-Банк, ВТБ, Т-Банк | **60 с** |
+| **Вход в сеть** | VK ID, Сбер ID, Яндекс ID, Альфа ID, Госуслуги | **2 мин** |
+| **Оплата** | Сбер, Альфа-Банк, ВТБ, Т-Банк | **5 мин** |
 
 ```mermaid
 sequenceDiagram
@@ -63,7 +95,7 @@ sequenceDiagram
 | <img src="docs/screenshots/1-portal.png" width="250"> | <img src="docs/screenshots/2-gates.png" width="250"> | <img src="docs/screenshots/3-detected.png" width="250"> |
 | **Портал сети.** Заставка раскрывается при прокрутке | **Выбор сервиса.** Вход в сеть и оплата | **Вход обнаружен.** Устройство открыло `id.vk.com` |
 | <img src="docs/screenshots/4-open-verify.png" width="250"> | <img src="docs/screenshots/5-done.png" width="250"> | <img src="docs/screenshots/7-open-pay.png" width="250"> |
-| **Шлюз VK открыт.** 20 секунд на код | **Код введён.** Доступ закрыт сразу | **Оплата ВТБ.** 60 секунд, светлая тема |
+| **Шлюз VK открыт.** 2 минуты на пуш или код | **Код введён.** Доступ закрыт сразу | **Оплата ВТБ.** 5 минут, светлая тема |
 
 Портал работает без интернета и без внешних библиотек: в закрытой сети CDN
 недоступен, поэтому всё встроено в одну страницу. Он обновляется по
@@ -78,31 +110,31 @@ NoNetPass с драйвером `nftables`. Сценарий проходит в
 этим стендом, он же запускается в CI.
 
 ```text
-3. Сервис просит код, пользователь нажимает «Открыть шлюз на 20 с»
+3. Сервис просит код, пользователь нажимает «Открыть шлюз на 2 мин»
   127.0.0.23  → im.vk.com   ДОСТУПЕН (Код подтверждения VK: 482913)
   127.0.0.23  → 3ds.vtb.ru  заблокирован (ConnectError)     ← другой сервис закрыт
   127.0.0.99  → im.vk.com   заблокирован (ConnectError)     ← соседнее устройство закрыто
-  nft nonetpass_pairs: 127.0.0.23 · im.vk.com (30 с), 127.0.0.23 · api.vk.com (30 с), …
+  nft nonetpass_pairs: 127.0.0.23 · im.vk.com (130 с), 127.0.0.23 · api.vk.com (130 с), …
 
 4. Код пришёл, пользователь нажимает «Я ввёл код»
   127.0.0.23  → im.vk.com   заблокирован (ConnectError)
   nft nonetpass_pairs: пусто
 
-6. Другое устройство 127.0.0.24 выбирает «ВТБ» (оплата, окно 60 с)
+6. Другое устройство 127.0.0.24 выбирает «ВТБ» (оплата, окно 5 мин)
   127.0.0.24  → im.vk.com   заблокирован (ConnectError)
   127.0.0.24  → 3ds.vtb.ru  ДОСТУПЕН (ВТБ: подтверждение платежа 1 290 ₽)
 
 7. Окна истекают сами
-  после 20 с:      127.0.0.25 → im.vk.com  заблокирован (ConnectError)
-  после 60 с:      127.0.0.24 → 3ds.vtb.ru заблокирован (ConnectError)
+  после 2 мин:    127.0.0.25 → im.vk.com  заблокирован (ConnectError)
+  после 5 мин:    127.0.0.24 → 3ds.vtb.ru заблокирован (ConnectError)
 
 8. Журнал сессий
-  19:16:54  127.0.0.23  VK ID opened
-  19:16:55  127.0.0.23  VK ID closed (code_entered)
-  19:16:58  127.0.0.24  ВТБ   opened
-  19:17:01  127.0.0.25  VK ID opened
-  19:17:21  127.0.0.25  VK ID closed (expired)
-  19:17:58  127.0.0.24  ВТБ   closed (expired)
+  04:29:37  127.0.0.23  VK ID opened
+  04:29:37  127.0.0.23  VK ID closed (code_entered)
+  04:29:40  127.0.0.24  ВТБ   opened
+  04:29:43  127.0.0.25  VK ID opened
+  04:31:43  127.0.0.25  VK ID closed (expired)
+  04:34:40  127.0.0.24  ВТБ   closed (expired)
 ```
 
 Полный вывод: [`docs/screenshots/lab-report.txt`](docs/screenshots/lab-report.txt).
@@ -172,7 +204,7 @@ nonetpass router-config ipset     > /opt/etc/ndm/netfilter.d/50-nonetpass.sh
 Настройка MikroTik построена на инструкции провайдера Captive Portal
 (Hotspot + RADIUS, страница входа провайдера, сеть `192.168.110.0/24`,
 сервер `hotspot1`). Сначала роутер настраивается по шагам 1–6 провайдера,
-затем добавляется NoNetPass ([шаги 7–9](deploy/mikrotik/README.md)):
+затем добавляется NoNetPass (пошагово: [Установка на ClientPulse](#установка-на-clientpulse)):
 
 - страницы входа провайдер держит открытыми в walled garden, они служат
   узлами-триггерами шлюзов (`id.vk.ru`, `id.sber.ru`, `passport.yandex.ru`,
@@ -202,7 +234,7 @@ nonetpass router-config ipset     > /opt/etc/ndm/netfilter.d/50-nonetpass.sh
 ```
 
 `gateways` — узлы, обращение к которым начинает сессию; `targets` — узлы,
-которые открываются на время окна; `kind` — `verify` (20 с) или `pay` (60 с).
+которые открываются на время окна; `kind` — `verify` (2 мин) или `pay` (5 мин).
 
 > Списки узлов по умолчанию собраны по основным доменам сервисов. Перед
 > запуском сверьте их со своей сетью: адреса доставки пушей, серверов
@@ -233,8 +265,8 @@ captive portal роутера (страницу авторизации гост�
 | `NONETPASS_DRIVER` | `mock` | драйвер роутера |
 | `NONETPASS_ROUTER_URL`, `_USER`, `_PASSWORD` | | доступ к роутеру (для OPNsense: API key и secret) |
 | `NONETPASS_ROUTER_VERIFY_TLS` | `true` | проверять сертификат роутера |
-| `NONETPASS_VERIFY_WINDOW_SECONDS` | `20` | окно шлюзов входа в сеть |
-| `NONETPASS_PAY_WINDOW_SECONDS` | `60` | окно шлюзов оплаты |
+| `NONETPASS_VERIFY_WINDOW_SECONDS` | `120` | окно шлюзов входа в сеть |
+| `NONETPASS_PAY_WINDOW_SECONDS` | `300` | окно шлюзов оплаты |
 | `NONETPASS_GATES_FILE` | | свой каталог шлюзов (JSON) |
 | `NONETPASS_CLIENT_LIST` | `nonetpass-clients` | префикс списков MikroTik и алиасов OPNsense |
 | `NONETPASS_COOLDOWN_SECONDS`, `_MAX_OPENS_PER_HOUR` | `15`, `6` | ограничения |
@@ -288,3 +320,222 @@ pytest
 - **Headless Relay.** Сервер сам забирает код через изолированный шлюз и
   показывает его в портале, не открывая доступ устройству.
 - Проверка драйверов и списков узлов на реальном железе и в реальных сетях.
+
+## Установка на ClientPulse
+
+Пошаговая установка портала NoNetPass в гостевую сеть ClientPulse на
+MikroTik (сценарий «только авторизация», Hotspot + RADIUS, страница входа
+`wifi.clientpulse.ru`). Подробности и разбор каждого правила:
+[`deploy/mikrotik/README.md`](deploy/mikrotik/README.md).
+
+**Что понадобится**
+
+- MikroTik с RouterOS 7, уже настроенный по инструкции ClientPulse;
+- для запуска на самом роутере: пакет `container` и USB-носитель или диск;
+  иначе любая машина в сети роутера (Raspberry Pi, мини-ПК, сервер);
+- компьютер с Python 3.10+ или Docker, чтобы собрать образ и файл настройки.
+
+**1. Настройте роутер по инструкции ClientPulse.** Выполните её шаги 1–6
+как есть: мост `bridge-hotspot`, сеть `192.168.110.1/24`, RADIUS-серверы
+ClientPulse, `/ip hotspot setup` с DNS-именем `wf.clientpulse.ru`, профили и
+таймауты, walled garden страниц входа (VK ID, Сбер ID, Яндекс ID, Альфа ID,
+Госуслуги), файлы `login.html` и остальные, отключение `api` и `api-ssl`.
+Проверьте, что гость видит страницу входа ClientPulse.
+
+**2. Соберите NoNetPass.**
+
+```sh
+git clone -b ClientPulse https://github.com/moggiler0x/NoNetPass.git
+cd NoNetPass
+docker buildx build --platform linux/arm64 -t nonetpass .   # linux/arm/v7 или linux/amd64 под свой роутер
+docker save nonetpass > nonetpass.tar
+```
+
+**3. Запустите NoNetPass.** На роутере: включите контейнеры
+(`/system/device-mode/update container=yes`, подтвердите кнопкой), загрузите
+`nonetpass.tar` на `usb1/` и выполните команды
+[шага 7](deploy/mikrotik/README.md#шаг-7-контейнер-nonetpass-на-роутере):
+`veth-nonetpass` с адресом `172.17.0.2`, переменные `NONETPASS_DRIVER=mikrotik`,
+`NONETPASS_ROUTER_URL=https://172.17.0.1`, пользователь и пароль `nonetpass`.
+На отдельной машине:
+
+```sh
+pip install .
+cp deploy/nonetpass.env.example .env   # NONETPASS_DRIVER=mikrotik, адрес роутера, пароль
+set -a; . ./.env; set +a
+nonetpass --port 8080
+```
+
+**4. Импортируйте правила NoNetPass.** Сгенерируйте файл под свою сеть
+(в `--portal` адрес, где запущен NoNetPass) и загрузите его в Files:
+
+```sh
+nonetpass router-config mikrotik --hotspot-server hotspot1 \
+    --hotspot-net 192.168.110.0/24 --portal 172.17.0.2:8080 > nonetpass.rsc
+```
+
+```
+/import nonetpass.rsc
+/user set nonetpass password=<свой пароль>
+```
+
+Файл добавит списки узлов на каждый шлюз, окна через
+`/ip hotspot walled-garden ip`, доступ к порталу до входа и имя
+`nonetpass.lan`, исключение из masquerade и REST через `www-ssl` только с
+адреса NoNetPass. Пароль из `/user set` впишите в
+`NONETPASS_ROUTER_PASSWORD`. Готовый файл со значениями по умолчанию:
+[`deploy/mikrotik/nonetpass.rsc`](deploy/mikrotik/nonetpass.rsc).
+
+**5. Дайте гостям ссылку на портал.** Портал открывается по адресу
+`http://nonetpass.lan:8080/`. Страница входа остаётся страницей ClientPulse,
+поэтому ссылку на NoNetPass разместите рядом: QR-код на табличке, текст в
+приветствии ClientPulse или в имени сети.
+
+**6. Проверьте.** Подключитесь к гостевой сети, откройте портал, выберите,
+например, VK ID и нажмите «Открыть шлюз на 2 мин». На роутере:
+
+```
+/ip hotspot walled-garden ip print where comment~"nonetpass"
+/ip firewall address-list print where list~"nonetpass-clients"
+```
+
+Во втором списке появится IP устройства с `timeout`, через 2 минуты (у
+банков через 5) или после «Я ввёл код» запись исчезнет. Состояние
+NoNetPass: `http://nonetpass.lan:8080/healthz`.
+
+> Окна входа и оплаты меняются переменными
+> `NONETPASS_VERIFY_WINDOW_SECONDS` (по умолчанию `120`) и
+> `NONETPASS_PAY_WINDOW_SECONDS` (`300`). Связка `walled-garden ip` со
+> списками адресов собрана по документации RouterOS 7 и инструкции
+> ClientPulse; на конкретном роутере её стоит проверить первой.
+
+---
+
+## 🇬🇧 English
+
+## What it is
+
+**The problem.** In isolated networks (corporate segments, training
+grounds, remote sites) the router filters traffic hard and there is no
+mobile service. A user signs in through an allowed SSO page (VK ID, Sber ID,
+Yandex ID, Alfa ID, Gosuslugi), and the service sends a push or a code to an
+app that is blocked. Payments hit the same wall: the bank asks to confirm a
+payment, its hosts are closed, and an SMS will not arrive.
+
+**The solution.** NoNetPass opens together with the network's captive
+portal. The user picks a service, and the router lets that one device reach
+that one service's hosts for a short window. Once the code arrives or the
+payment is confirmed, the window closes. Other devices, other services and
+the rest of the internet stay closed the whole time.
+
+| Gate | Services | Window |
+|---|---|:-:|
+| **Sign-in** | VK ID, Sber ID, Yandex ID, Alfa ID, Gosuslugi | **2 min** |
+| **Payment** | Sber, Alfa-Bank, VTB, T-Bank | **5 min** |
+
+- **Precise windows.** Access is opened only for the pair "device · hosts
+  of the chosen service". A VK window does not open a bank, and a bank
+  window does not open VK.
+- **Auto-revoke.** A window closes on the button, on the timer, on shutdown
+  or by an admin. Where the router supports entry timeouts, the window
+  closes even if NoNetPass crashes.
+- **Detection.** From the dnsmasq query log, a `POST /api/detect` webhook,
+  or the user's choice on the portal.
+- **Session journal** in JSON Lines, per-device cooldown and hourly limits.
+- **Routers:** MikroTik (REST, API, container), Keenetic (RCI, Entware
+  ipset), OpenWrt (nftables, ubus), OPNsense, any Linux with nftables or
+  ipset. NoNetPass runs on the router itself or on a separate machine.
+- **Tested** in `lab/run_lab.py` on real kernel nftables in a network
+  namespace, with Chromium driving the portal; the screenshots above come
+  from that lab, and it runs in CI.
+
+The rest of the documentation (settings, API, gate catalog) is in the
+Russian part above; variable names and endpoints are the same.
+
+## ClientPulse portal setup
+
+Step-by-step installation of the NoNetPass portal into a ClientPulse guest
+network on MikroTik ("authorization only" scenario, Hotspot + RADIUS,
+sign-in page `wifi.clientpulse.ru`). Rule-by-rule details (in Russian):
+[`deploy/mikrotik/README.md`](deploy/mikrotik/README.md).
+
+**You need**
+
+- a MikroTik on RouterOS 7, already configured with the ClientPulse guide;
+- to run on the router: the `container` package and a USB stick or disk;
+  otherwise any machine in the router's network (Raspberry Pi, mini PC,
+  server);
+- a computer with Python 3.10+ or Docker to build the image and the config.
+
+**1. Configure the router with the ClientPulse guide.** Follow its steps
+1–6 as written: `bridge-hotspot`, network `192.168.110.1/24`, the ClientPulse
+RADIUS servers, `/ip hotspot setup` with DNS name `wf.clientpulse.ru`,
+profiles and timeouts, the walled garden for sign-in pages (VK ID, Sber ID,
+Yandex ID, Alfa ID, Gosuslugi), `login.html` and the other files, and
+`api`/`api-ssl` disabled. Check that a guest sees the ClientPulse sign-in
+page.
+
+**2. Build NoNetPass.**
+
+```sh
+git clone -b ClientPulse https://github.com/moggiler0x/NoNetPass.git
+cd NoNetPass
+docker buildx build --platform linux/arm64 -t nonetpass .   # or linux/arm/v7, linux/amd64 for your router
+docker save nonetpass > nonetpass.tar
+```
+
+**3. Run NoNetPass.** On the router: enable containers
+(`/system/device-mode/update container=yes`, confirm with the button),
+upload `nonetpass.tar` to `usb1/` and run the commands from
+[step 7](deploy/mikrotik/README.md#шаг-7-контейнер-nonetpass-на-роутере):
+`veth-nonetpass` at `172.17.0.2`, `NONETPASS_DRIVER=mikrotik`,
+`NONETPASS_ROUTER_URL=https://172.17.0.1`, user `nonetpass` and its password.
+On a separate machine:
+
+```sh
+pip install .
+cp deploy/nonetpass.env.example .env   # NONETPASS_DRIVER=mikrotik, router address, password
+set -a; . ./.env; set +a
+nonetpass --port 8080
+```
+
+**4. Import the NoNetPass rules.** Generate the file for your network
+(`--portal` is where NoNetPass runs) and upload it to Files:
+
+```sh
+nonetpass router-config mikrotik --hotspot-server hotspot1 \
+    --hotspot-net 192.168.110.0/24 --portal 172.17.0.2:8080 > nonetpass.rsc
+```
+
+```
+/import nonetpass.rsc
+/user set nonetpass password=<your password>
+```
+
+It adds per-gate host lists, windows via `/ip hotspot walled-garden ip`,
+pre-login access to the portal under the name `nonetpass.lan`, a masquerade
+exception, and REST over `www-ssl` limited to the NoNetPass address. Put the
+password from `/user set` into `NONETPASS_ROUTER_PASSWORD`. A ready file with
+the defaults: [`deploy/mikrotik/nonetpass.rsc`](deploy/mikrotik/nonetpass.rsc).
+
+**5. Give guests the portal link.** The portal lives at
+`http://nonetpass.lan:8080/`. The sign-in page stays ClientPulse's, so place
+the NoNetPass link next to it: a QR code on a sign, the ClientPulse welcome
+text, or the network name.
+
+**6. Check it.** Join the guest network, open the portal, pick VK ID, for
+example, and press the open button. On the router:
+
+```
+/ip hotspot walled-garden ip print where comment~"nonetpass"
+/ip firewall address-list print where list~"nonetpass-clients"
+```
+
+The device IP shows up in the second list with a `timeout` and disappears
+after 2 minutes (5 for banks) or after "I entered the code". NoNetPass
+status: `http://nonetpass.lan:8080/healthz`.
+
+> Windows are set by `NONETPASS_VERIFY_WINDOW_SECONDS` (default `120`) and
+> `NONETPASS_PAY_WINDOW_SECONDS` (`300`). The `walled-garden ip` rules with
+> address lists follow the RouterOS 7 docs and the ClientPulse guide; verify
+> them on your router first.

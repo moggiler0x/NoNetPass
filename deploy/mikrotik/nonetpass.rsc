@@ -39,15 +39,15 @@ add list=nonetpass-targets-tbank-pay address=api.tbank.ru comment="nonetpass: Т
 #    walled garden ip. NoNetPass кладёт IP клиента в nonetpass-clients-<шлюз>
 #    с timeout, и роутер сам закроет окно даже без NoNetPass.
 /ip hotspot walled-garden ip
-add action=accept server=hotspot1 src-address-list=nonetpass-clients-vk dst-address-list=nonetpass-targets-vk comment="nonetpass: окно VK ID (20 с)"
-add action=accept server=hotspot1 src-address-list=nonetpass-clients-sber-id dst-address-list=nonetpass-targets-sber-id comment="nonetpass: окно Сбер ID (20 с)"
-add action=accept server=hotspot1 src-address-list=nonetpass-clients-yandex-id dst-address-list=nonetpass-targets-yandex-id comment="nonetpass: окно Яндекс ID (20 с)"
-add action=accept server=hotspot1 src-address-list=nonetpass-clients-alfa-id dst-address-list=nonetpass-targets-alfa-id comment="nonetpass: окно Альфа ID (20 с)"
-add action=accept server=hotspot1 src-address-list=nonetpass-clients-gosuslugi dst-address-list=nonetpass-targets-gosuslugi comment="nonetpass: окно Госуслуги (20 с)"
-add action=accept server=hotspot1 src-address-list=nonetpass-clients-sber-pay dst-address-list=nonetpass-targets-sber-pay comment="nonetpass: окно Сбер (60 с)"
-add action=accept server=hotspot1 src-address-list=nonetpass-clients-alfa-pay dst-address-list=nonetpass-targets-alfa-pay comment="nonetpass: окно Альфа-Банк (60 с)"
-add action=accept server=hotspot1 src-address-list=nonetpass-clients-vtb-pay dst-address-list=nonetpass-targets-vtb-pay comment="nonetpass: окно ВТБ (60 с)"
-add action=accept server=hotspot1 src-address-list=nonetpass-clients-tbank-pay dst-address-list=nonetpass-targets-tbank-pay comment="nonetpass: окно Т-Банк (60 с)"
+add action=accept server=hotspot1 src-address-list=nonetpass-clients-vk dst-address-list=nonetpass-targets-vk comment="nonetpass: окно VK ID (120 с)"
+add action=accept server=hotspot1 src-address-list=nonetpass-clients-sber-id dst-address-list=nonetpass-targets-sber-id comment="nonetpass: окно Сбер ID (120 с)"
+add action=accept server=hotspot1 src-address-list=nonetpass-clients-yandex-id dst-address-list=nonetpass-targets-yandex-id comment="nonetpass: окно Яндекс ID (120 с)"
+add action=accept server=hotspot1 src-address-list=nonetpass-clients-alfa-id dst-address-list=nonetpass-targets-alfa-id comment="nonetpass: окно Альфа ID (120 с)"
+add action=accept server=hotspot1 src-address-list=nonetpass-clients-gosuslugi dst-address-list=nonetpass-targets-gosuslugi comment="nonetpass: окно Госуслуги (120 с)"
+add action=accept server=hotspot1 src-address-list=nonetpass-clients-sber-pay dst-address-list=nonetpass-targets-sber-pay comment="nonetpass: окно Сбер (300 с)"
+add action=accept server=hotspot1 src-address-list=nonetpass-clients-alfa-pay dst-address-list=nonetpass-targets-alfa-pay comment="nonetpass: окно Альфа-Банк (300 с)"
+add action=accept server=hotspot1 src-address-list=nonetpass-clients-vtb-pay dst-address-list=nonetpass-targets-vtb-pay comment="nonetpass: окно ВТБ (300 с)"
+add action=accept server=hotspot1 src-address-list=nonetpass-clients-tbank-pay dst-address-list=nonetpass-targets-tbank-pay comment="nonetpass: окно Т-Банк (300 с)"
 
 # 3. Портал NoNetPass доступен до входа в Hotspot.
 add action=accept server=hotspot1 dst-address=172.17.0.2 protocol=tcp dst-port=8080 comment="nonetpass: портал"

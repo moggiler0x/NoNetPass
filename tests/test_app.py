@@ -18,8 +18,8 @@ def test_gates_endpoint(tmp_path):
     client, _ = make_client(tmp_path)
     with client:
         gates = {g["id"]: g for g in client.get("/api/gates").json()}
-        assert gates["vk"]["kind"] == "verify" and gates["vk"]["window"] == 20
-        assert gates["tbank-pay"]["kind"] == "pay" and gates["tbank-pay"]["window"] == 60
+        assert gates["vk"]["kind"] == "verify" and gates["vk"]["window"] == 120
+        assert gates["tbank-pay"]["kind"] == "pay" and gates["tbank-pay"]["window"] == 300
 
 
 def test_panel_open_and_done(tmp_path):
@@ -30,7 +30,7 @@ def test_panel_open_and_done(tmp_path):
         r = client.post("/api/me/open", json={"gate": "sber-pay"}, headers=headers)
         assert r.status_code == 200 and r.json()["state"] == "open"
         assert r.json()["kind"] == "pay"
-        assert driver.active["10.0.0.5"].ttl == 60
+        assert driver.active["10.0.0.5"].ttl == 300
         me = client.get("/api/me", headers=headers).json()
         assert me["session"]["gate_id"] == "sber-pay" and len(me["gates"]) == 9
         client.post("/api/me/done", headers=headers)

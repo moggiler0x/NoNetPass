@@ -14,8 +14,8 @@ RADIUS, профили Hotspot, страницы `login.html` и walled garden �
 |---|---|---|
 | Сеть гостей | `bridge-hotspot`, `192.168.110.0/24`, сервер `hotspot1` | ничего не меняет |
 | Страницы входа | walled garden: `id.vk.ru`, `id.sber.ru`, `passport.yandex.ru`, `oauth.yandex.ru`, `id.alfabank.ru`, `*.gosuslugi.ru` | ничего не меняет, это узлы-триггеры шлюзов |
-| Доставка кода | закрыта | окно 20 с через `walled-garden ip` только для IP устройства и только к узлам выбранного сервиса |
-| Оплата | закрыта | окно 60 с так же |
+| Доставка кода | закрыта | окно 2 мин через `walled-garden ip` только для IP устройства и только к узлам выбранного сервиса |
+| Оплата | закрыта | окно 5 мин так же |
 | Доступ к роутеру | службы `api` и `api-ssl` отключены | драйвер `mikrotik` через REST (`www-ssl`), только с адреса NoNetPass |
 | Портал NoNetPass | — | открыт до входа через walled garden, имя `nonetpass.lan` |
 

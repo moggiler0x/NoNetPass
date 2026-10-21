@@ -193,12 +193,12 @@
     </div>
 
     <div id="verify-wrap">
-      <div class="section-h"><h2>Вход в сеть</h2><span class="w">окно 20 секунд</span><span class="rule"></span></div>
+      <div class="section-h"><h2>Вход в сеть</h2><span class="w">окно 2 минуты</span><span class="rule"></span></div>
       <div class="grid" id="verify-grid"></div>
     </div>
 
     <div id="pay-wrap">
-      <div class="section-h"><h2>Оплата</h2><span class="w">окно 60 секунд</span><span class="rule"></span></div>
+      <div class="section-h"><h2>Оплата</h2><span class="w">окно 5 минут</span><span class="rule"></span></div>
       <div class="grid" id="pay-grid"></div>
     </div>
 
@@ -284,25 +284,33 @@ function gateCard(g) {
   el.innerHTML = `<div class="logo" style="color:${onTone(tone)}">${ABBR[g.id] || g.name[0]}</div>
     <div class="name"></div>
     <div class="kind">${g.kind === "verify" ? "вход в сеть" : "подтверждение оплаты"}</div>
-    <div class="win">${Math.round(g.window)} с</div>`;
+    <div class="win">${dur(g.window)}</div>`;
   el.querySelector(".name").textContent = g.name;
   el.onclick = () => openGate(g.id);
   return el;
+}
+
+// 120 → «2 мин», 90 → «1 мин 30 с», 20 → «20 с».
+function dur(sec) {
+  sec = Math.round(sec);
+  const m = Math.floor(sec / 60), s = sec % 60;
+  if (!m) return s + " с";
+  return s ? m + " мин " + s + " с" : m + " мин";
 }
 
 function renderGates() {
   gatesById = Object.fromEntries(state.gates.map((g) => [g.id, g]));
   const v = $("verify-grid"), p = $("pay-grid");
   v.innerHTML = ""; p.innerHTML = "";
-  let vw = 20, pw = 60;
+  let vw = 120, pw = 300;
   for (const g of state.gates) {
     (g.kind === "verify" ? v : p).appendChild(gateCard(g));
     if (g.kind === "verify") vw = Math.round(g.window); else pw = Math.round(g.window);
   }
   $("verify-wrap").style.display = v.children.length ? "" : "none";
   $("pay-wrap").style.display = p.children.length ? "" : "none";
-  document.querySelector("#verify-wrap .w").textContent = "окно " + vw + " с";
-  document.querySelector("#pay-wrap .w").textContent = "окно " + pw + " с";
+  document.querySelector("#verify-wrap .w").textContent = "окно " + dur(vw);
+  document.querySelector("#pay-wrap .w").textContent = "окно " + dur(pw);
 }
 
 /* ----- активное окно ----- */
@@ -316,7 +324,7 @@ function showSheet(g) {
   const tone = TONES[g.id] || "#5b8cff";
   $("sheet").style.setProperty("--tone", tone);
   $("sheet").style.setProperty("--on-tone", onTone(tone));
-  $("open").textContent = "Открыть шлюз на " + Math.round(g.window) + " с";
+  $("open").textContent = "Открыть шлюз на " + dur(g.window);
   $("ring").classList.remove("ok");
   $("svc-name").textContent = g.name;
   $("prog").style.stroke = tone;
