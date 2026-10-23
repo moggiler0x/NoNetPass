@@ -23,7 +23,8 @@ from urllib.parse import urlparse
 
 import httpx
 
-from .base import DriverError, Grant, RouterDriver, validate_ipv4
+from ..blocklist import normalize_mac
+from .base import DriverError, Grant, RouterDriver, reboot_dropped, validate_ipv4
 
 ADDRESS_LIST = "/ip/firewall/address-list"
 
@@ -35,6 +36,7 @@ def gate_list(base: str, gate: str) -> str:
 class MikroTikRestDriver(RouterDriver):
     name = "mikrotik"
     router_side_timeout = True
+    can_reboot = True
 
     def __init__(
         self,
@@ -104,7 +106,28 @@ class MikroTikRestDriver(RouterDriver):
         if resp.status_code != 200:
             return {"ok": False, "status": resp.status_code}
         data = resp.json()
-        return {"ok": True, "version": data.get("version"), "board": data.get("board-name")}
+        return {"ok": True, "version": data.get("version"), "board": data.get("board-name"),
+                "uptime": data.get("uptime")}
+
+    async def lookup_mac(self, client_ip: str) -> str | None:
+        # Гость Hotspot виден в /ip/hotspot/host, остальные — в ARP.
+        for path in ("/ip/hotspot/host", "/ip/arp"):
+            resp = await self._request("GET", path, params={"address": client_ip})
+            if resp.status_code == 200:
+                for row in resp.json():
+                    if mac := normalize_mac(row.get("mac-address", "")):
+                        return mac
+        return None
+
+    async def reboot(self) -> None:
+        try:
+            resp = await self.client.post("/system/reboot", json={})
+        except httpx.HTTPError as exc:
+            if reboot_dropped(exc):
+                return
+            raise DriverError(f"mikrotik: {exc}") from exc
+        if resp.status_code >= 400:
+            raise DriverError(f"mikrotik: reboot {resp.status_code} {resp.text[:200]}")
 
     async def aclose(self) -> None:
         await self.client.aclose()
@@ -198,6 +221,7 @@ def _trap(replies: list[tuple[str, dict[str, str]]]) -> str | None:
 class MikroTikApiDriver(RouterDriver):
     name = "mikrotik-api"
     router_side_timeout = True
+    can_reboot = True
 
     def __init__(self, url: str, user: str, password: str, list_name: str, verify_tls: bool = True):
         # url: api://host[:8728] или api-ssl://host[:8729]
@@ -284,5 +308,24 @@ class MikroTikApiDriver(RouterDriver):
         replies = await self._run(["/system/resource/print"])
         for kind, attrs in replies:
             if kind == "!re":
-                return {"ok": True, "version": attrs.get("version"), "board": attrs.get("board-name")}
+                return {"ok": True, "version": attrs.get("version"), "board": attrs.get("board-name"),
+                        "uptime": attrs.get("uptime")}
         return {"ok": False}
+
+    async def lookup_mac(self, client_ip: str) -> str | None:
+        for menu in ("/ip/hotspot/host", "/ip/arp"):
+            replies = await self._run([f"{menu}/print", f"?address={client_ip}", "=.proplist=mac-address"])
+            for kind, attrs in replies:
+                if kind == "!re" and (mac := normalize_mac(attrs.get("mac-address", ""))):
+                    return mac
+        return None
+
+    async def reboot(self) -> None:
+        try:
+            replies = await self._run(["/system/reboot"])
+        except DriverError as exc:
+            if isinstance(exc.__cause__, Exception) and reboot_dropped(exc.__cause__):
+                return
+            raise
+        if err := _trap(replies):
+            raise DriverError(f"mikrotik-api: {err}")

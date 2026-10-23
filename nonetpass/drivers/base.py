@@ -60,9 +60,28 @@ class RouterDriver(ABC):
     async def revoke(self, client_ip: str, handle: str) -> None:
         """Закрыть доступ. Должен быть идемпотентным."""
 
+    # True, если драйвер умеет перезагружать роутер.
+    can_reboot: bool = False
+
+    async def extend(self, grant: Grant, handle: str) -> str:
+        """Продлить окно до ``grant.ttl`` от текущего момента.
+
+        По умолчанию повторный grant: MikroTik обновляет timeout записи,
+        nft и ipset (``-exist``) обновляют таймаут элемента.
+        """
+        return await self.grant(grant)
+
     async def check(self) -> dict:
-        """Проверка связи с роутером для /healthz."""
+        """Проверка связи с роутером для /healthz и мониторинга."""
         return {"ok": True}
+
+    async def lookup_mac(self, client_ip: str) -> str | None:
+        """MAC устройства по IP (ARP или Hotspot роутера), если драйвер умеет."""
+        return None
+
+    async def reboot(self) -> None:
+        """Перезагрузить роутер."""
+        raise DriverError(f"{self.name}: перезагрузка не поддерживается")
 
     async def aclose(self) -> None:
         return None
@@ -80,3 +99,15 @@ async def resolve_ipv4(hosts: tuple[str, ...]) -> list[str]:
             continue
         result.update(info[4][0] for info in infos)
     return sorted(result)
+
+
+def reboot_dropped(exc: Exception) -> bool:
+    """Соединение оборвалось уже после команды перезагрузки: это успех.
+
+    Ошибка подключения означает, что команда до роутера не дошла.
+    """
+    import httpx
+
+    if isinstance(exc, (httpx.ConnectError, httpx.ConnectTimeout, ConnectionRefusedError)):
+        return False
+    return isinstance(exc, (httpx.TransportError, ConnectionError, asyncio.IncompleteReadError, asyncio.TimeoutError))

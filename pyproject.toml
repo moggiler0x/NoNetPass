@@ -1,6 +1,6 @@
 [project]
 name = "nonetpass"
-version = "0.1.0"
+version = "0.3.0"
 description = "JIT-доступ к узлам доставки 2FA-кодов для закрытых сетей без сотовой связи"
 readme = "README.md"
 requires-python = ">=3.10"

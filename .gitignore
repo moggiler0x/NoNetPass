@@ -5,3 +5,5 @@ __pycache__/
 nonetpass-sessions.jsonl
 nonetpass-keenetic-state.json
 .pytest_cache/
+nonetpass-state.json
+nonetpass-state.json.tmp

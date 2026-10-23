@@ -24,7 +24,8 @@ from pathlib import Path
 
 import httpx
 
-from .base import DriverError, Grant, RouterDriver, resolve_ipv4, validate_ipv4
+from ..blocklist import normalize_mac
+from .base import DriverError, Grant, RouterDriver, reboot_dropped, resolve_ipv4, validate_ipv4
 
 DEFAULT_GRANT_CMD = "access-list {acl} permit ip {src} 255.255.255.255 {dst} 255.255.255.255"
 DEFAULT_REVOKE_CMD = "access-list {acl} no permit ip {src} 255.255.255.255 {dst} 255.255.255.255"
@@ -37,6 +38,7 @@ def challenge_password(login: str, password: str, realm: str, challenge: str) ->
 
 class KeeneticDriver(RouterDriver):
     name = "keenetic"
+    can_reboot = True
 
     def __init__(
         self,
@@ -167,6 +169,31 @@ class KeeneticDriver(RouterDriver):
             return {"ok": False, "status": resp.status_code}
         data = resp.json()
         return {"ok": True, "version": data.get("title") or data.get("release"), "model": data.get("model")}
+
+    async def lookup_mac(self, client_ip: str) -> str | None:
+        try:
+            if not self._authed:
+                await self._auth()
+            resp = await self.client.get("/rci/show/ip/arp")
+        except httpx.HTTPError as exc:
+            raise DriverError(f"keenetic: {exc}") from exc
+        if resp.status_code != 200:
+            return None
+        rows = resp.json()
+        if isinstance(rows, dict):
+            rows = rows.get("arp") or rows.get("entry") or list(rows.values())
+        for row in rows if isinstance(rows, list) else []:
+            if isinstance(row, dict) and row.get("ip") == client_ip:
+                return normalize_mac(row.get("mac", ""))
+        return None
+
+    async def reboot(self) -> None:
+        try:
+            await self._parse(["system reboot"])
+        except DriverError as exc:
+            if isinstance(exc.__cause__, Exception) and reboot_dropped(exc.__cause__):
+                return
+            raise
 
     async def aclose(self) -> None:
         await self.client.aclose()

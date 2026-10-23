@@ -234,3 +234,210 @@ def test_dnsmasq_parsing():
     assert catalog.for_host("login.id.vk.com").id == "vk"
     assert catalog.for_host("notid.vk.com") is None
     assert catalog.for_host("secure.tbank.ru").id == "tbank-pay"
+
+
+async def test_mikrotik_rest_reboot_and_mac():
+    seen = []
+
+    def handler(request: httpx.Request):
+        seen.append((request.method, request.url.path, dict(request.url.params)))
+        if request.url.path == "/rest/ip/hotspot/host":
+            return httpx.Response(200, json=[])
+        if request.url.path == "/rest/ip/arp":
+            return httpx.Response(200, json=[{"address": "192.168.1.23", "mac-address": "AA:BB:CC:DD:EE:FF"}])
+        if request.url.path == "/rest/system/reboot":
+            # Роутер обрывает соединение, уходя в перезагрузку.
+            raise httpx.RemoteProtocolError("Server disconnected", request=request)
+        return httpx.Response(404)
+
+    driver = MikroTikRestDriver("https://r", "u", "p", "l", transport=httpx.MockTransport(handler))
+    assert await driver.lookup_mac("192.168.1.23") == "aa:bb:cc:dd:ee:ff"
+    await driver.reboot()
+    assert seen[-1][:2] == ("POST", "/rest/system/reboot")
+
+
+async def test_mikrotik_rest_reboot_connect_error_is_failure():
+    def handler(request):
+        raise httpx.ConnectError("refused", request=request)
+
+    driver = MikroTikRestDriver("https://r", "u", "p", "l", transport=httpx.MockTransport(handler))
+    with pytest.raises(DriverError):
+        await driver.reboot()
+
+
+async def test_mikrotik_api_reboot():
+    received = []
+
+    async def handle(reader, writer):
+        while True:
+            words = []
+            try:
+                while (length := await read_length(reader)) != 0:
+                    words.append((await reader.readexactly(length)).decode())
+            except asyncio.IncompleteReadError:
+                break
+            received.append(words)
+            if words[0] == "/system/reboot":
+                writer.close()  # роутер уходит в перезагрузку, не ответив
+                return
+            writer.write(encode_sentence(["!done"]))
+            await writer.drain()
+
+    server = await asyncio.start_server(handle, "127.0.0.1", 0)
+    port = server.sockets[0].getsockname()[1]
+    async with server:
+        await MikroTikApiDriver(f"api://127.0.0.1:{port}", "admin", "pw", "l").reboot()
+    assert received[-1] == ["/system/reboot"]
+
+
+async def test_keenetic_reboot_and_arp():
+    commands = []
+
+    def handler(request):
+        if request.url.path == "/rci/show/ip/arp":
+            return httpx.Response(200, json=[{"ip": "192.168.1.23", "mac": "aa:bb:cc:00:11:22", "interface": "Home"}])
+        commands.append(json.loads(request.content)[0]["parse"])
+        return httpx.Response(200, json=[{"parse": {"status": []}}])
+
+    driver = KeeneticDriver("http://127.0.0.1:79", None, None, "nonetpass", state_file=None,
+                            transport=httpx.MockTransport(handler))
+    assert await driver.lookup_mac("192.168.1.23") == "aa:bb:cc:00:11:22"
+    await driver.reboot()
+    assert commands == ["system reboot"]
+
+
+async def test_openwrt_reboot_and_arp():
+    calls = []
+
+    def handler(request):
+        _, obj, method, args = json.loads(request.content)["params"]
+        calls.append((obj, method))
+        if obj == "session":
+            return httpx.Response(200, json={"result": [0, {"ubus_rpc_session": "S"}]})
+        if (obj, method) == ("file", "read"):
+            arp = ("IP address       HW type     Flags       HW address            Mask     Device\n"
+                   "192.168.1.23     0x1         0x2         aa:bb:cc:dd:ee:23     *        br-lan\n")
+            return httpx.Response(200, json={"result": [0, {"data": arp}]})
+        return httpx.Response(200, json={"result": [0]})
+
+    driver = OpenWrtDriver("http://r", "nonetpass", "pw", "s", transport=httpx.MockTransport(handler))
+    assert await driver.lookup_mac("192.168.1.23") == "aa:bb:cc:dd:ee:23"
+    assert await driver.lookup_mac("192.168.1.99") is None
+    await driver.reboot()
+    assert calls[-1] == ("system", "reboot")
+
+
+async def test_opnsense_reboot():
+    seen = []
+
+    def handler(request):
+        seen.append(request.url.path)
+        return httpx.Response(200, json={"status": "ok"})
+
+    driver = OPNsenseDriver("https://fw", "k", "s", "a", transport=httpx.MockTransport(handler))
+    await driver.reboot()
+    assert seen == ["/api/core/system/reboot"]
+
+
+async def test_on_router_reboot_and_arp(tmp_path, monkeypatch):
+    calls = []
+
+    async def runner(*argv):
+        calls.append(argv)
+        return 0, ""
+
+    nft = NftablesDriver("s", runner=runner)
+    await nft.reboot()
+    assert calls == [("reboot",)]
+    assert nft.can_reboot
+
+
+def test_syslog_and_dnsmasq_lines():
+    from nonetpass.detect import DnsLineParser
+
+    p = DnsLineParser()
+    assert p.feed("dnsmasq[1]: query[A] passport.yandex.ru from 192.168.110.40") == ("passport.yandex.ru", "192.168.110.40")
+    assert p.feed("<134>Oct 23 12:00:00 MikroTik dns,packet --- got query from 192.168.110.23:53122:", "10.0.0.1") is None
+    assert p.feed("<134>Oct 23 12:00:00 MikroTik dns,packet id:2b4 rd:1 tc:0 aa:0 qr:0 ra:0 QUERY 'no error'", "10.0.0.1") is None
+    assert p.feed("<134>Oct 23 12:00:00 MikroTik dns,packet question: id.vk.ru:A:IN", "10.0.0.1") == ("id.vk.ru", "192.168.110.23")
+    # Вопрос без предшествующего «got query from» от того же роутера не угадывается.
+    assert p.feed("dns,packet question: id.vk.ru:A:IN", "10.0.0.2") is None
+    assert p.feed("dns query from 192.168.88.10: #123 3ds.vtb.ru. A") == ("3ds.vtb.ru", "192.168.88.10")
+
+
+async def test_syslog_listener_detects_gate():
+    from nonetpass.detect import start_syslog
+    from nonetpass.journal import SessionJournal
+    from nonetpass.drivers import MockDriver
+    from nonetpass.sessions import SessionManager
+
+    manager = SessionManager(Settings(), MockDriver(), SessionJournal(None))
+    transport, protocol = await start_syslog("127.0.0.1", 0, manager, load_catalog())
+    port = transport.get_extra_info("sockname")[1]
+    loop = asyncio.get_running_loop()
+    sender, _ = await loop.create_datagram_endpoint(asyncio.DatagramProtocol, remote_addr=("127.0.0.1", port))
+    sender.sendto(b"dns,packet --- got query from 192.168.110.23:53122:")
+    sender.sendto(b"dns,packet question: id.sber.ru:A:IN")
+    for _ in range(50):
+        await asyncio.sleep(0.01)
+        if manager.current("192.168.110.23"):
+            break
+    assert manager.current("192.168.110.23").gate_id == "sber-id"
+    sender.close()
+    transport.close()
+    await manager.shutdown()
+
+
+async def test_hostcheck_groups_by_gate():
+    from nonetpass.hostcheck import check_catalog, hosts_text
+
+    async def checker(host):
+        ok = host.endswith(".vk.com") or host.endswith(".vk.ru")
+        return {"host": host, "dns": True, "addresses": ["1.1.1.1"], "tcp": ok, "ms": 5 if ok else None,
+                "error": None if ok else "TCP 443: refused"}
+
+    report = await check_catalog(load_catalog(), checker=checker)
+    vk = next(g for g in report if g["gate"] == "vk")
+    assert vk["reachable"] == len(vk["hosts"]) and vk["ok"]
+    vtb = next(g for g in report if g["gate"] == "vtb-pay")
+    assert vtb["reachable"] == 0
+    assert "ВТБ: доступно 0 из 2" in hosts_text(report)
+
+
+def test_blocklist_normalization(tmp_path):
+    from nonetpass.blocklist import Blocklist, arp_lookup, normalize_mac
+    from nonetpass.store import StateStore
+
+    assert normalize_mac("AA-BB-CC-DD-EE-FF") == "aa:bb:cc:dd:ee:ff"
+    assert normalize_mac("aabb.ccdd.eeff") is None
+    assert normalize_mac("aabbccddeeff") == "aa:bb:cc:dd:ee:ff"
+    bl = Blocklist(StateStore(str(tmp_path / "s.json")), macs=["00:11:22:33:44:55"])
+    with pytest.raises(ValueError):
+        bl.remove("00:11:22:33:44:55")  # задан в окружении
+    bl.add("10.0.0.1", "test")
+    assert Blocklist(StateStore(str(tmp_path / "s.json"))).match("10.0.0.1", None) == "10.0.0.1"
+    arp = tmp_path / "arp"
+    arp.write_text("IP address HW type Flags HW address Mask Device\n10.0.0.7 0x1 0x2 AA:BB:CC:00:00:07 * br0\n")
+    assert arp_lookup("10.0.0.7", str(arp)) == "aa:bb:cc:00:00:07"
+
+
+def test_extra_routers_from_env(monkeypatch):
+    monkeypatch.setenv("NONETPASS_ROUTERS", "keenetic, office")
+    monkeypatch.setenv("NONETPASS_ROUTER_KEENETIC_DRIVER", "keenetic")
+    monkeypatch.setenv("NONETPASS_ROUTER_KEENETIC_URL", "http://192.168.1.1")
+    monkeypatch.setenv("NONETPASS_ROUTER_OFFICE_DRIVER", "mikrotik")
+    monkeypatch.setenv("NONETPASS_ROUTER_OFFICE_URL", "https://10.0.0.1")
+    monkeypatch.setenv("NONETPASS_ROUTER_OFFICE_USER", "admin")
+    monkeypatch.setenv("NONETPASS_TELEGRAM_ADMIN_IDS", "123, -456")
+    settings = Settings.from_env()
+    assert [r.name for r in settings.routers] == ["keenetic", "office"]
+    assert settings.telegram_admin_ids == [123, -456]
+    from nonetpass.control import RouterSet
+    from nonetpass.drivers import MockDriver
+
+    routers = RouterSet(settings, MockDriver())
+    assert [(r.name, r.kind, r.primary) for r in routers] == [
+        ("main", "mock", True), ("keenetic", "keenetic", False), ("office", "mikrotik", False)]
+    monkeypatch.setenv("NONETPASS_TELEGRAM_ADMIN_IDS", "@me")
+    with pytest.raises(ValueError):
+        Settings.from_env()

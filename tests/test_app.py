@@ -8,7 +8,8 @@ from nonetpass.drivers import MockDriver
 def make_client(tmp_path, **kw):
     settings = Settings(
         cooldown_seconds=0, detect_token="d", admin_token="a",
-        trust_forwarded=True, log_path=str(tmp_path / "log.jsonl"), **kw,
+        trust_forwarded=True, log_path=str(tmp_path / "log.jsonl"),
+        state_path=str(tmp_path / "state.json"), **kw,
     )
     driver = MockDriver()
     return TestClient(create_app(settings, driver)), driver

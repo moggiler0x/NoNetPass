@@ -9,11 +9,12 @@ from __future__ import annotations
 
 import httpx
 
-from .base import DriverError, Grant, RouterDriver, validate_ipv4
+from .base import DriverError, Grant, RouterDriver, reboot_dropped, validate_ipv4
 
 
 class OPNsenseDriver(RouterDriver):
     name = "opnsense"
+    can_reboot = True
 
     def __init__(
         self,
@@ -63,6 +64,14 @@ class OPNsenseDriver(RouterDriver):
         except httpx.HTTPError as exc:
             return {"ok": False, "error": str(exc)}
         return {"ok": resp.status_code == 200}
+
+    async def reboot(self) -> None:
+        try:
+            await self._post("/core/system/reboot", {})
+        except DriverError as exc:
+            if isinstance(exc.__cause__, Exception) and reboot_dropped(exc.__cause__):
+                return
+            raise
 
     async def aclose(self) -> None:
         await self.client.aclose()
