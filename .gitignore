@@ -7,3 +7,4 @@ nonetpass-keenetic-state.json
 .pytest_cache/
 nonetpass-state.json
 nonetpass-state.json.tmp
+.env

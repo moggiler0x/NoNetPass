@@ -1,11 +1,12 @@
 {
 	"nonetpass": {
-		"description": "NoNetPass: управление набором nonetpass_clients через nft",
+		"description": "NoNetPass: набор nonetpass_pairs через nft, ARP для MAC, перезагрузка из бота",
 		"read": {
-			"ubus": { "system": ["board"] }
+			"ubus": { "system": ["board"], "file": ["read"] },
+			"file": { "/proc/net/arp": ["read"] }
 		},
 		"write": {
-			"ubus": { "file": ["exec"] },
+			"ubus": { "file": ["exec"], "system": ["reboot"] },
 			"file": { "/usr/sbin/nft": ["exec"] }
 		}
 	}

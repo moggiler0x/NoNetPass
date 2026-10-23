@@ -1,0 +1,13 @@
+.git
+.github
+.venv
+**/__pycache__
+*.pyc
+*.egg-info
+.pytest_cache
+.env
+docs
+lab
+tests
+nonetpass-*.json
+nonetpass-*.jsonl

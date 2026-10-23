@@ -27,6 +27,7 @@
     }
   }
   * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
   body { margin: 0; background: var(--bg); color: var(--text);
     font: 15px/1.5 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; -webkit-font-smoothing: antialiased; }
   button, input, select { font: inherit; color: inherit; }
@@ -85,7 +86,7 @@
   .bar-row .track { height: 10px; background: var(--card2); border-radius: 6px; overflow: hidden; }
   .bar-row .fill { height: 100%; background: linear-gradient(90deg, var(--accent), var(--accent-2)); border-radius: 6px; }
   .days { display: flex; align-items: flex-end; gap: 3px; height: 120px; padding-top: 6px; }
-  .days div { flex: 1; min-width: 4px; background: var(--accent); border-radius: 3px 3px 0 0; opacity: .85; }
+  .days div { flex: 1; min-width: 4px; max-width: 28px; background: var(--accent); border-radius: 3px 3px 0 0; opacity: .85; }
   .tag { display: inline-block; padding: 1px 8px; border-radius: 100px; font-size: 12px; border: 1px solid var(--line); color: var(--muted); }
   .tag.verify { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 40%, transparent); }
   .tag.pay { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 40%, transparent); }
@@ -100,6 +101,7 @@
   .pad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
   .pad button { height: 58px; border-radius: 16px; border: 1px solid var(--line); background: var(--card); font-size: 22px; font-weight: 600; cursor: pointer; }
   .pad button:active { background: var(--card2); }
+  .pw { display: grid; gap: 10px; margin-top: 22px; }
   .err { color: var(--err); min-height: 1.4em; font-size: 14px; margin-top: 12px; }
   /* модалка */
   .modal { position: fixed; inset: 0; z-index: 20; display: none; place-items: center; padding: 20px; background: rgba(4,6,10,.7); backdrop-filter: blur(6px); }
@@ -109,7 +111,11 @@
   .toast { position: fixed; z-index: 30; right: 16px; bottom: 16px; max-width: min(420px, calc(100% - 32px)); padding: 12px 16px; border-radius: 12px;
     background: var(--card2); border: 1px solid var(--line-strong); opacity: 0; transform: translateY(10px); transition: .2s; pointer-events: none; }
   .toast.show { opacity: 1; transform: none; }
-  @media (max-width: 640px) { .brand small { display: none; } .bar-row { grid-template-columns: 80px 1fr 32px; } }
+  #stats, #rp-stats { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
+  @media (max-width: 640px) {
+    .brand small { display: none; } .bar-row { grid-template-columns: 80px 1fr 32px; }
+    .bar { flex-wrap: wrap; row-gap: 8px; } .brand { flex: 1; } nav { order: 3; flex-basis: 100%; }
+  }
 </style>
 </head>
 <body>
@@ -121,7 +127,7 @@
       <div class="pin-dots" id="pin-dots"></div>
       <div class="pad" id="pad"></div>
     </div>
-    <form id="pw-box" hidden style="display:grid;gap:10px;margin-top:22px">
+    <form id="pw-box" class="pw" hidden>
       <input type="text" id="lg-user" placeholder="Логин" autocomplete="username">
       <input type="password" id="lg-pass" placeholder="Пароль" autocomplete="current-password">
       <button class="btn" type="submit">Войти</button>
@@ -144,8 +150,8 @@
       <button data-tab="settings">Настройки</button>
       <button data-tab="system">Система</button>
     </nav>
-    <button class="icon-btn" id="theme" title="Тема">◐</button>
-    <button class="icon-btn" id="logout" title="Выйти">⎋</button>
+    <button class="icon-btn" id="theme" title="Тема">Тема</button>
+    <button class="icon-btn" id="logout">Выйти</button>
   </div></header>
 
   <div class="wrap">
@@ -175,7 +181,7 @@
             <option value="today">Сегодня</option><option value="7d">7 дней</option><option value="30d">30 дней</option>
             <option value="custom">Свой период…</option>
           </select>
-          <span id="rp-custom" hidden class="row"><input type="date" id="rp-start"> — <input type="date" id="rp-end"></span>
+          <span id="rp-custom" class="row" hidden><input type="date" id="rp-start"> — <input type="date" id="rp-end"></span>
           <button class="btn" id="rp-go">Показать</button>
           <span style="flex:1"></span>
           <button class="btn ghost sm" id="rp-csv">Отчёт CSV</button>

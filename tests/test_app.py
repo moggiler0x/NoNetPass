@@ -102,3 +102,15 @@ def test_healthz(tmp_path):
     with client:
         h = client.get("/healthz").json()
         assert h["driver"] == "mock" and h["gates"] == 9
+
+
+def test_pwa_and_admin_pages(tmp_path):
+    client, _ = make_client(tmp_path)
+    with client:
+        manifest = client.get("/manifest.webmanifest")
+        assert manifest.status_code == 200 and manifest.json()["start_url"] == "/"
+        assert "serviceWorker" not in client.get("/sw.js").text  # это сам worker
+        assert client.get("/sw.js").headers["content-type"].startswith("text/javascript")
+        assert client.get("/static/icon-192.png").headers["content-type"] == "image/png"
+        assert client.get("/static/..%2Fapp.py").status_code == 404
+        assert client.get("/admin").status_code == 200

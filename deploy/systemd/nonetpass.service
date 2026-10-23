@@ -5,11 +5,17 @@ Wants=network-online.target
 
 [Service]
 EnvironmentFile=/etc/nonetpass.env
+Environment=NONETPASS_LOG_PATH=/var/lib/nonetpass/sessions.jsonl
+Environment=NONETPASS_STATE_PATH=/var/lib/nonetpass/state.json
+Environment=NONETPASS_DRIVER_OPT_STATE_FILE=/var/lib/nonetpass/keenetic-state.json
 ExecStart=/opt/nonetpass/.venv/bin/nonetpass --port 8080
 WorkingDirectory=/var/lib/nonetpass
-Restart=on-failure
-DynamicUser=yes
+User=nonetpass
+Group=nonetpass
 StateDirectory=nonetpass
+# «Перезапуск NoNetPass» из бота и панели завершает процесс, systemd поднимает его снова.
+Restart=always
+RestartSec=2
 
 [Install]
 WantedBy=multi-user.target

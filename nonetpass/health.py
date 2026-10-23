@@ -162,7 +162,7 @@ class HealthMonitor:
             ips = ", ".join(s.client_ip for s in overdue[:5])
             await self._set("overdue", "Таймеры окон", FAIL, f"окна не закрылись вовремя: {ips}")
         else:
-            await self._set("overdue", "Таймеры окон", OK, f"открыто окон: {len(self.manager.active_windows())}")
+            await self._set("overdue", "Таймеры окон", OK, "окна закрываются вовремя")
 
     async def _check_storage(self) -> None:
         problems = []

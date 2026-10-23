@@ -4,6 +4,13 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>NoNetPass</title>
+<meta name="theme-color" content="#07090e" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#eef1f7" media="(prefers-color-scheme: light)">
+<meta name="description" content="Доступ к коду подтверждения и оплате в сети без мобильной связи">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/static/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/static/icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
 <style>
   :root {
     --bg: #07090e;
@@ -22,6 +29,11 @@
     --err: #ff6b6b;
     --radius: 18px;
     --gutter: 18px;
+  }
+  :root[data-theme="light"] {
+    --bg: #eef1f7; --bg2: #e4e9f3; --card: rgba(255,255,255,0.82); --card-solid: #fff;
+    --line: rgba(10,20,40,0.1); --line-strong: rgba(10,20,40,0.18);
+    --text: #141925; --muted: #566072; --faint: #8893a5;
   }
   @media (prefers-color-scheme: light) {
     :root:not([data-theme="dark"]) {
@@ -124,6 +136,26 @@
   .gate .win { position: absolute; top: 14px; right: 14px; font-size: 11px; color: var(--faint);
     border: 1px solid var(--line); border-radius: 100px; padding: 2px 8px; }
 
+  .theme-btn { position: fixed; z-index: 15; top: max(14px, env(safe-area-inset-top)); right: 14px;
+    width: 38px; height: 38px; border-radius: 50%; border: 1px solid var(--line-strong);
+    background: var(--card); color: var(--muted); backdrop-filter: blur(10px); cursor: pointer; font-size: 16px; }
+  .how { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+  .how div { border: 1px solid var(--line); border-radius: 14px; padding: 12px; background: var(--card);
+    font-size: 13px; color: var(--muted); backdrop-filter: blur(10px); }
+  .how b { display: block; color: var(--text); font-size: 13px; margin-bottom: 2px; }
+  .how i { font-style: normal; color: var(--accent); font-weight: 800; margin-right: 4px; }
+  @media (max-width: 420px) { .how { grid-template-columns: 1fr; } }
+  .steps { list-style: none; margin: 4px 0 6px; padding: 0; text-align: left; font-size: 13px; }
+  .steps li { display: flex; gap: 10px; align-items: flex-start; padding: 5px 0; color: var(--faint); }
+  .steps li::before { content: attr(data-n); flex: none; width: 20px; height: 20px; border-radius: 50%;
+    display: grid; place-items: center; font-size: 11px; font-weight: 700; border: 1px solid var(--line-strong); }
+  .steps li.done { color: var(--muted); } .steps li.done::before { content: "✓"; background: var(--verify); border-color: var(--verify); color: #06130d; }
+  .steps li.now { color: var(--text); font-weight: 600; } .steps li.now::before { background: var(--tone); border-color: var(--tone); color: var(--on-tone, #fff); }
+  .ring.low .prog { stroke: var(--err) !important; } .ring.low .num { color: var(--err); }
+  button.ext { width: 100%; margin-top: 10px; border: 1px solid var(--tone); border-radius: 13px; padding: 12px;
+    font-size: 14px; font-weight: 650; background: transparent; color: var(--text); cursor: pointer; }
+  button.ext:disabled { opacity: .5; cursor: default; }
+
   footer { text-align: center; color: var(--faint); font-size: 12px; margin-top: 40px; line-height: 1.7; }
 
   /* --- Активное окно --- */
@@ -174,6 +206,7 @@
 </style>
 </head>
 <body>
+  <button class="theme-btn" id="theme" title="Тема: как в системе" aria-label="Сменить тему">◐</button>
   <div class="scroll">
     <div class="stage">
       <div class="aurora" id="aurora"></div>
@@ -190,6 +223,12 @@
     <div class="status">
       <span class="pill"><span class="led on" id="led"></span>Связь <b id="link">…</b></span>
       <span class="pill">Устройство <b id="ip">—</b></span>
+    </div>
+
+    <div class="how" id="how">
+      <div><b><i>1</i>Выберите сервис</b>через который входите или платите</div>
+      <div><b><i>2</i>Откройте шлюз</b>когда сервис попросит код или подтверждение</div>
+      <div><b><i>3</i>Введите код</b>и нажмите «Готово», шлюз закроется</div>
     </div>
 
     <div id="verify-wrap">
@@ -214,6 +253,7 @@
     <div class="sheet" id="sheet">
       <div class="svc"><span class="dot"></span><span id="svc-name">—</span></div>
       <div class="lead" id="lead"></div>
+      <ol class="steps" id="steps"></ol>
       <div class="ring" id="ring">
         <svg viewBox="0 0 100 100">
           <circle class="track" cx="50" cy="50" r="44" fill="none" stroke-width="7"></circle>
@@ -226,6 +266,7 @@
       <div class="reach"><span class="led" id="reach-led"></span><span id="reach">узлы закрыты</span></div>
       <button class="act" id="open">Открыть шлюз</button>
       <button class="act" id="done">Я ввёл код</button>
+      <button class="ext" id="extend">Продлить</button>
       <button class="ghost" id="close">Закрыть</button>
       <div class="msg" id="msg"></div>
       <div class="targets" id="targets"></div>
@@ -240,7 +281,13 @@ const TONES = { vk: "#4a76d6", gosuslugi: "#0d4cd3", "sber-id": "#21a038", "yand
 const ABBR = { vk: "VK", gosuslugi: "Г", "sber-id": "С", "yandex-id": "Я", "alfa-id": "А",
   "sber-pay": "С", "alfa-pay": "А", "vtb-pay": "ВТ", "tbank-pay": "Т" };
 
-let state = { gates: [], session: null, client_ip: "—" };
+const STEPS = {
+  verify: ["Войдите через страницу сервиса", "Сервис просит код: откройте шлюз",
+    "Дождитесь пуша или кода в приложении", "Введите код и нажмите «Я ввёл код»"],
+  pay: ["Дойдите до подтверждения оплаты", "Откройте шлюз",
+    "Подтвердите платёж в приложении банка", "Нажмите «Я оплатил»"],
+};
+let state = { gates: [], session: null, client_ip: "—", extend: { seconds: 60, max: 1 } };
 let gatesById = {};
 let activeGate = null, tick = null, probe = null;
 
@@ -334,6 +381,19 @@ function showSheet(g) {
   $("overlay").classList.add("show");
 }
 
+function renderSteps(kind, current) {
+  $("steps").innerHTML = STEPS[kind].map((t, i) =>
+    `<li data-n="${i + 1}" class="${i < current ? "done" : i === current ? "now" : ""}">${t}</li>`).join("");
+}
+
+function renderExtend(s) {
+  const ex = state.extend || { seconds: 0, max: 0 };
+  const left = ex.max - (s.extends || 0);
+  $("extend").style.display = ex.max > 0 && ex.seconds > 0 && left > 0 ? "" : "none";
+  $("extend").disabled = false;
+  $("extend").textContent = "Продлить на " + dur(ex.seconds) + (ex.max === 1 ? " (один раз)" : "");
+}
+
 function hideSheet() {
   $("overlay").classList.remove("show");
   clearInterval(tick); stopProbe(); activeGate = null;
@@ -344,12 +404,14 @@ function renderSession() {
   if (!s || s.state === "closed") {
     if ($("overlay").classList.contains("show")) {
       clearInterval(tick); stopProbe();
-      $("open").style.display = "none"; $("done").style.display = "none";
+      $("open").style.display = "none"; $("done").style.display = "none"; $("extend").style.display = "none";
+      $("ring").classList.remove("low");
       const done = s && s.close_reason === "code_entered";
       $("prog").style.transition = "none";
       $("prog").style.strokeDashoffset = done ? 0 : CIRC;
       if (done) $("prog").style.stroke = "var(--verify)";
       $("lead").textContent = done ? "Готово. Доступ закрыт." : "Время вышло. Доступ закрыт.";
+      if (activeGate) renderSteps(activeGate.kind, done ? 4 : 2);
       $("ring").classList.toggle("ok", done);
       if (!done) $("num").textContent = "0:00";
       setTimeout(hideSheet, 1400);
@@ -367,6 +429,8 @@ function renderSession() {
     $("num").textContent = fmt(g.window);
     $("prog").style.strokeDashoffset = 0;
     $("done").style.display = "none"; $("open").style.display = ""; $("open").disabled = false;
+    $("extend").style.display = "none"; $("ring").classList.remove("low");
+    renderSteps(g.kind, 1);
     clearInterval(tick); stopProbe();
     return;
   }
@@ -377,13 +441,17 @@ function renderSession() {
   $("lead").textContent = g.kind === "verify"
     ? "Шлюз открыт. Откройте приложение и дождитесь кода."
     : "Шлюз открыт. Подтвердите платёж в приложении банка.";
+  renderSteps(g.kind, 2);
+  renderExtend(s);
   startProbe();
   clearInterval(tick);
   const end = Date.now() + (s.remaining ?? g.window) * 1000;
+  const total = s.window || g.window;
   const step = () => {
     const left = (end - Date.now()) / 1000;
-    const frac = Math.max(0, Math.min(1, left / g.window));
+    const frac = Math.max(0, Math.min(1, left / total));
     $("num").textContent = fmt(left);
+    $("ring").classList.toggle("low", left <= 20);
     $("prog").style.strokeDashoffset = CIRC * (1 - frac);
   };
   step(); tick = setInterval(step, 250);
@@ -435,7 +503,7 @@ function connect() {
   ws.onmessage = (ev) => {
     const m = JSON.parse(ev.data);
     if (m.type === "state") {
-      state = { gates: m.gates, session: m.session, client_ip: m.client_ip };
+      state = { gates: m.gates, session: m.session, client_ip: m.client_ip, extend: m.extend || state.extend };
       $("ip").textContent = m.client_ip;
       renderGates();
     } else if (m.type === "session") {
@@ -447,7 +515,31 @@ function connect() {
 
 $("done").onclick = () => { $("done").disabled = true; call("/api/me/done"); };
 $("open").onclick = () => { if (activeGate) { $("open").disabled = true; call("/api/me/open", { gate: activeGate.id }).then(() => { $("open").disabled = false; }); } };
+$("extend").onclick = () => { $("extend").disabled = true; call("/api/me/extend").then(() => { $("extend").disabled = false; }); };
 $("close").onclick = hideSheet;
+
+/* ----- тема: как в системе → светлая → тёмная ----- */
+const THEMES = ["auto", "light", "dark"];
+const THEME_NAMES = { auto: "как в системе", light: "светлая", dark: "тёмная" };
+let theme = "auto";
+try { theme = localStorage.getItem("nonetpass-theme") || "auto"; } catch {}
+function applyTheme() {
+  if (theme === "auto") delete document.documentElement.dataset.theme;
+  else document.documentElement.dataset.theme = theme;
+  $("theme").title = "Тема: " + THEME_NAMES[theme];
+  $("theme").textContent = { auto: "◐", light: "☀", dark: "☾" }[theme];
+}
+$("theme").onclick = () => {
+  theme = THEMES[(THEMES.indexOf(theme) + 1) % THEMES.length];
+  try { localStorage.setItem("nonetpass-theme", theme); } catch {}
+  applyTheme();
+};
+applyTheme();
+
+/* ----- PWA: портал можно добавить на главный экран ----- */
+if ("serviceWorker" in navigator && (location.protocol === "https:" || location.hostname === "localhost" || location.hostname === "127.0.0.1")) {
+  navigator.serviceWorker.register("/sw.js").catch(() => {});
+}
 onScroll();
 connect();
 </script>
