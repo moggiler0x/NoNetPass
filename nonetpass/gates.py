@@ -20,7 +20,7 @@ ACS-серверов 3-D Secure и API у банков и платформ ме�
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 VERIFY = "verify"
@@ -103,6 +103,17 @@ class GateCatalog:
 
     def get(self, gate_id: str) -> Gate | None:
         return self.gates.get(gate_id)
+
+    def set_window(self, kind: str, seconds: float) -> None:
+        """Новая длительность окна для всех шлюзов типа kind (из админ-панели)."""
+        if kind not in (VERIFY, PAY):
+            raise ValueError("kind должен быть verify или pay")
+        for gate_id, gate in list(self.gates.items()):
+            if gate.kind == kind:
+                self.gates[gate_id] = replace(gate, window=float(seconds))
+
+    def window(self, kind: str) -> float | None:
+        return next((g.window for g in self.gates.values() if g.kind == kind), None)
 
     def for_host(self, host: str) -> Gate | None:
         """Шлюз, которому принадлежит узел-триггер host (или его поддомен)."""

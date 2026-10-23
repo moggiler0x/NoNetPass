@@ -18,6 +18,7 @@ class CloseReason(str, Enum):
     ABANDONED = "abandoned"  # окно так и не открывали
     REVOKED = "revoked"  # закрыто администратором
     SHUTDOWN = "shutdown"
+    RESTART = "restart"  # окно осталось с прошлого запуска и закрыто при старте
     ERROR = "error"
 
 
@@ -29,6 +30,7 @@ class Session:
     gate_name: str
     kind: str  # verify | pay
     host: str | None = None
+    mac: str | None = None
     id: str = field(default_factory=lambda: uuid.uuid4().hex[:12])
     state: State = State.DETECTED
     created_at: float = field(default_factory=time.time)
@@ -38,6 +40,8 @@ class Session:
     close_reason: CloseReason | None = None
     handle: str | None = None
     error: str | None = None
+    extends: int = 0
+    window: float | None = None
 
     @property
     def active(self) -> bool:

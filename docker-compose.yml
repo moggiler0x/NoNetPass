@@ -1,0 +1,43 @@
+# NoNetPass одной командой:  docker compose up -d --build
+# С мониторингом (Prometheus + Grafana): docker compose --profile monitoring up -d --build
+# Настройки — в файле .env рядом (пример: deploy/nonetpass.env.example).
+services:
+  nonetpass:
+    build: .
+    image: ghcr.io/moggiler0x/nonetpass:${NONETPASS_TAG:-clientpulse}
+    env_file: .env
+    environment:
+      NONETPASS_SYSLOG_PORT: "5514"
+    ports:
+      - "${PORTAL_PORT:-8080}:8080"
+      - "${SYSLOG_PUBLISH_PORT:-5514}:5514/udp"
+    volumes:
+      - nonetpass-data:/data
+    # «Перезапуск NoNetPass» из бота и панели завершает процесс, Docker поднимает его снова.
+    restart: unless-stopped
+
+  prometheus:
+    profiles: [monitoring]
+    image: prom/prometheus:v2.55.1
+    volumes:
+      - ./deploy/grafana/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    restart: unless-stopped
+
+  grafana:
+    profiles: [monitoring]
+    image: grafana/grafana:11.3.1
+    ports:
+      - "${GRAFANA_PORT:-3000}:3000"
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+    volumes:
+      - ./deploy/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./deploy/grafana/nonetpass.json:/var/lib/grafana/dashboards/nonetpass.json:ro
+      - grafana-data:/var/lib/grafana
+    restart: unless-stopped
+
+volumes:
+  nonetpass-data:
+  prometheus-data:
+  grafana-data:

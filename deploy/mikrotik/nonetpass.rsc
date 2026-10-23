@@ -76,9 +76,10 @@ add chain=srcnat src-address=192.168.110.0/24 dst-address=172.17.0.2 action=acce
 
 # 6. Доступ NoNetPass к роутеру. Инструкция провайдера отключает api и
 #    api-ssl, поэтому NoNetPass работает через REST (драйвер mikrotik, служба
-#    www-ssl). Пускаем к ней только адрес NoNetPass.
+#    www-ssl). Пускаем к ней только адрес NoNetPass. Право reboot нужно
+#    для перезагрузки роутера из админ-панели и Telegram-бота.
 #    Замените CHANGE_ME на свой пароль до импорта.
-/user group add name=nonetpass policy=read,write,api,rest-api
+/user group add name=nonetpass policy=read,write,api,rest-api,reboot
 /user add name=nonetpass group=nonetpass password=CHANGE_ME address=172.17.0.2/32
 /certificate add name=nonetpass-rest common-name=nonetpass-rest days-valid=3650
 /certificate sign nonetpass-rest

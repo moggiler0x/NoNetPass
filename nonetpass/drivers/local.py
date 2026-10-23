@@ -16,6 +16,7 @@ from __future__ import annotations
 import asyncio
 import json
 
+from ..blocklist import arp_lookup
 from .base import DriverError, Grant, RouterDriver, resolve_ipv4, validate_ipv4
 
 
@@ -30,6 +31,22 @@ async def run(*argv: str) -> tuple[int, str]:
     return proc.returncode or 0, stderr.decode(errors="replace").strip()
 
 
+class OnRouterMixin:
+    """NoNetPass запущен на самом роутере: ARP и перезагрузка локальные."""
+
+    can_reboot = True
+    reboot_cmd: tuple[str, ...] = ("reboot",)
+    runner = staticmethod(run)
+
+    async def lookup_mac(self, client_ip: str) -> str | None:
+        return arp_lookup(client_ip)
+
+    async def reboot(self) -> None:
+        code, err = await self.runner(*self.reboot_cmd)
+        if code:
+            raise DriverError(f"{' '.join(self.reboot_cmd)}: {err}")
+
+
 async def _targets(grant: Grant, resolver) -> list[str]:
     targets = [validate_ipv4(ip) for ip in await resolver(grant.targets)]
     if not targets:
@@ -37,7 +54,7 @@ async def _targets(grant: Grant, resolver) -> list[str]:
     return targets
 
 
-class NftablesDriver(RouterDriver):
+class NftablesDriver(OnRouterMixin, RouterDriver):
     name = "nftables"
     router_side_timeout = True
 
@@ -83,7 +100,7 @@ class NftablesDriver(RouterDriver):
         return {"ok": code == 0, **({"error": err} if code else {})}
 
 
-class IpsetDriver(RouterDriver):
+class IpsetDriver(OnRouterMixin, RouterDriver):
     name = "ipset"
     router_side_timeout = True
 

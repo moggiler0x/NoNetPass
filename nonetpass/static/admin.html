@@ -1,0 +1,547 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex">
+<title>NoNetPass · админ</title>
+<link rel="icon" href="/static/icon.svg" type="image/svg+xml">
+<style>
+  :root {
+    --bg: #07090e; --bg2: #0d1119; --card: #121722; --card2: #171d2a;
+    --line: rgba(255,255,255,0.09); --line-strong: rgba(255,255,255,0.18);
+    --text: #eef1f6; --muted: #9aa6b8; --faint: #697488;
+    --accent: #5b8cff; --accent-2: #7c6cff; --ok: #3ddc97; --warn: #ffb23e; --err: #ff6b6b;
+    --radius: 16px;
+  }
+  :root[data-theme="light"] {
+    --bg: #eef1f7; --bg2: #e4e9f3; --card: #ffffff; --card2: #f5f7fb;
+    --line: rgba(10,20,40,0.1); --line-strong: rgba(10,20,40,0.2);
+    --text: #141925; --muted: #566072; --faint: #8893a5;
+  }
+  @media (prefers-color-scheme: light) {
+    :root:not([data-theme="dark"]) {
+      --bg: #eef1f7; --bg2: #e4e9f3; --card: #ffffff; --card2: #f5f7fb;
+      --line: rgba(10,20,40,0.1); --line-strong: rgba(10,20,40,0.2);
+      --text: #141925; --muted: #566072; --faint: #8893a5;
+    }
+  }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+    font: 15px/1.5 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; -webkit-font-smoothing: antialiased; }
+  button, input, select { font: inherit; color: inherit; }
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 0 16px 60px; }
+  header { position: sticky; top: 0; z-index: 5; background: color-mix(in srgb, var(--bg) 88%, transparent);
+    backdrop-filter: blur(10px); border-bottom: 1px solid var(--line); }
+  .bar { max-width: 1080px; margin: 0 auto; padding: 12px 16px; display: flex; align-items: center; gap: 14px; }
+  .brand { font-weight: 800; letter-spacing: -0.01em; font-size: 18px; white-space: nowrap; }
+  .brand span { background: linear-gradient(92deg, var(--accent), var(--accent-2)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .brand small { color: var(--faint); font-weight: 600; font-size: 12px; margin-left: 6px; }
+  nav { display: flex; gap: 4px; overflow-x: auto; flex: 1; scrollbar-width: none; }
+  nav button { border: 0; background: none; padding: 7px 12px; border-radius: 10px; color: var(--muted); cursor: pointer; white-space: nowrap; }
+  nav button.on { background: var(--card2); color: var(--text); }
+  .icon-btn { border: 1px solid var(--line); background: var(--card); border-radius: 10px; padding: 6px 10px; cursor: pointer; color: var(--muted); }
+  section { display: none; padding-top: 22px; }
+  section.on { display: block; }
+  h2 { font-size: 15px; margin: 26px 2px 12px; letter-spacing: .01em; }
+  h2:first-child { margin-top: 0; }
+  .grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px; }
+  .hero { display: flex; align-items: center; gap: 16px; padding: 18px 20px; }
+  .hero .big { width: 48px; height: 48px; border-radius: 14px; display: grid; place-items: center; font-size: 24px; flex: none; }
+  .hero b { font-size: 18px; display: block; }
+  .hero .sub { color: var(--muted); font-size: 13px; }
+  .st-ok { background: color-mix(in srgb, var(--ok) 18%, transparent); color: var(--ok); }
+  .st-warn { background: color-mix(in srgb, var(--warn) 18%, transparent); color: var(--warn); }
+  .st-fail { background: color-mix(in srgb, var(--err) 20%, transparent); color: var(--err); }
+  .st-unknown { background: var(--card2); color: var(--faint); }
+  .stat .n { font-size: 28px; font-weight: 750; font-variant-numeric: tabular-nums; }
+  .stat .l { color: var(--muted); font-size: 13px; }
+  .check { display: flex; gap: 12px; align-items: flex-start; }
+  .dot { width: 10px; height: 10px; border-radius: 50%; margin-top: 6px; flex: none; background: var(--faint); }
+  .dot.ok { background: var(--ok); box-shadow: 0 0 8px var(--ok); } .dot.warn { background: var(--warn); } .dot.fail { background: var(--err); box-shadow: 0 0 8px var(--err); }
+  .check .t { font-weight: 600; } .check .d { color: var(--muted); font-size: 13px; word-break: break-word; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th { text-align: left; color: var(--faint); font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: .06em; }
+  th, td { padding: 9px 10px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+  tr:last-child td { border-bottom: 0; }
+  .tbl { overflow-x: auto; padding: 4px 6px; }
+  .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; }
+  .muted { color: var(--muted); } .faint { color: var(--faint); font-size: 13px; }
+  .btn { border: 0; border-radius: 10px; padding: 9px 14px; font-weight: 650; cursor: pointer; background: var(--accent); color: #fff; }
+  .btn.ghost { background: transparent; border: 1px solid var(--line-strong); color: var(--text); }
+  .btn.danger { background: var(--err); color: #fff; }
+  .btn.sm { padding: 5px 10px; font-size: 13px; }
+  .btn:disabled { opacity: .5; cursor: default; }
+  .row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+  input[type=text], input[type=number], input[type=date], input[type=password], select {
+    background: var(--card2); border: 1px solid var(--line); border-radius: 10px; padding: 9px 11px; min-width: 0; }
+  label.f { display: grid; gap: 6px; font-size: 13px; color: var(--muted); }
+  .alert { display: flex; gap: 10px; padding: 9px 0; border-bottom: 1px solid var(--line); font-size: 14px; }
+  .alert:last-child { border-bottom: 0; }
+  .alert time { color: var(--faint); font-size: 12px; white-space: nowrap; padding-top: 2px; }
+  .bars { display: grid; gap: 8px; }
+  .bar-row { display: grid; grid-template-columns: 110px 1fr 40px; gap: 10px; align-items: center; font-size: 13px; }
+  .bar-row .track { height: 10px; background: var(--card2); border-radius: 6px; overflow: hidden; }
+  .bar-row .fill { height: 100%; background: linear-gradient(90deg, var(--accent), var(--accent-2)); border-radius: 6px; }
+  .days { display: flex; align-items: flex-end; gap: 3px; height: 120px; padding-top: 6px; }
+  .days div { flex: 1; min-width: 4px; max-width: 28px; background: var(--accent); border-radius: 3px 3px 0 0; opacity: .85; }
+  .tag { display: inline-block; padding: 1px 8px; border-radius: 100px; font-size: 12px; border: 1px solid var(--line); color: var(--muted); }
+  .tag.verify { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 40%, transparent); }
+  .tag.pay { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 40%, transparent); }
+  .empty { color: var(--faint); padding: 18px 4px; text-align: center; }
+  /* вход */
+  #login { min-height: 100svh; display: grid; place-items: center; padding: 24px; }
+  .login { width: min(100%, 340px); text-align: center; }
+  .login .brand { font-size: 28px; margin-bottom: 4px; }
+  .pin-dots { display: flex; justify-content: center; gap: 12px; margin: 22px 0 18px; }
+  .pin-dots i { width: 14px; height: 14px; border-radius: 50%; border: 2px solid var(--line-strong); }
+  .pin-dots i.f { background: var(--accent); border-color: var(--accent); }
+  .pad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+  .pad button { height: 58px; border-radius: 16px; border: 1px solid var(--line); background: var(--card); font-size: 22px; font-weight: 600; cursor: pointer; }
+  .pad button:active { background: var(--card2); }
+  .pw { display: grid; gap: 10px; margin-top: 22px; }
+  .err { color: var(--err); min-height: 1.4em; font-size: 14px; margin-top: 12px; }
+  /* модалка */
+  .modal { position: fixed; inset: 0; z-index: 20; display: none; place-items: center; padding: 20px; background: rgba(4,6,10,.7); backdrop-filter: blur(6px); }
+  .modal.show { display: grid; }
+  .modal .card { width: min(100%, 400px); padding: 22px; }
+  .modal h3 { margin: 0 0 8px; }
+  .toast { position: fixed; z-index: 30; right: 16px; bottom: 16px; max-width: min(420px, calc(100% - 32px)); padding: 12px 16px; border-radius: 12px;
+    background: var(--card2); border: 1px solid var(--line-strong); opacity: 0; transform: translateY(10px); transition: .2s; pointer-events: none; }
+  .toast.show { opacity: 1; transform: none; }
+  #stats, #rp-stats { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
+  @media (max-width: 640px) {
+    .brand small { display: none; } .bar-row { grid-template-columns: 80px 1fr 32px; }
+    .bar { flex-wrap: wrap; row-gap: 8px; } .brand { flex: 1; } nav { order: 3; flex-basis: 100%; }
+  }
+</style>
+</head>
+<body>
+<div id="login" hidden>
+  <div class="login">
+    <div class="brand">NoNet<span>Pass</span></div>
+    <div class="muted">Вход в админ-панель</div>
+    <div id="pin-box" hidden>
+      <div class="pin-dots" id="pin-dots"></div>
+      <div class="pad" id="pad"></div>
+    </div>
+    <form id="pw-box" class="pw" hidden>
+      <input type="text" id="lg-user" placeholder="Логин" autocomplete="username">
+      <input type="password" id="lg-pass" placeholder="Пароль" autocomplete="current-password">
+      <button class="btn" type="submit">Войти</button>
+    </form>
+    <div class="row" id="switch-box" hidden style="justify-content:center;margin-top:14px">
+      <button class="btn ghost sm" id="switch">Войти по паролю</button>
+    </div>
+    <div class="err" id="lg-err"></div>
+  </div>
+</div>
+
+<div id="app" hidden>
+  <header><div class="bar">
+    <div class="brand">NoNet<span>Pass</span><small>админ</small></div>
+    <nav id="nav">
+      <button data-tab="overview" class="on">Обзор</button>
+      <button data-tab="reports">Отчёты</button>
+      <button data-tab="devices">Устройства</button>
+      <button data-tab="hosts">Узлы</button>
+      <button data-tab="settings">Настройки</button>
+      <button data-tab="system">Система</button>
+    </nav>
+    <button class="icon-btn" id="theme" title="Тема">Тема</button>
+    <button class="icon-btn" id="logout">Выйти</button>
+  </div></header>
+
+  <div class="wrap">
+    <!-- Обзор -->
+    <section id="overview" class="on">
+      <div class="card hero" id="hero">
+        <div class="big st-unknown" id="hero-icon">…</div>
+        <div style="flex:1"><b id="hero-title">Проверка…</b><div class="sub" id="hero-sub"></div></div>
+        <button class="btn ghost sm" id="recheck">Проверить</button>
+      </div>
+      <h2>Сегодня и за месяц</h2>
+      <div class="grid" id="stats"></div>
+      <h2>Мониторинг</h2>
+      <div class="grid" id="checks"></div>
+      <h2 class="row" style="justify-content:space-between">Открытые окна <button class="btn ghost sm" id="close-all">Закрыть все</button></h2>
+      <div class="card tbl"><table><thead><tr><th>Сервис</th><th>Устройство</th><th>Осталось</th><th></th></tr></thead><tbody id="windows"></tbody></table></div>
+      <h2>Уведомления</h2>
+      <div class="card" id="alerts"></div>
+    </section>
+
+    <!-- Отчёты -->
+    <section id="reports">
+      <div class="card">
+        <div class="row">
+          <select id="rp-preset">
+            <option value="">Этот месяц</option><option value="prev">Прошлый месяц</option>
+            <option value="today">Сегодня</option><option value="7d">7 дней</option><option value="30d">30 дней</option>
+            <option value="custom">Свой период…</option>
+          </select>
+          <span id="rp-custom" class="row" hidden><input type="date" id="rp-start"> — <input type="date" id="rp-end"></span>
+          <button class="btn" id="rp-go">Показать</button>
+          <span style="flex:1"></span>
+          <button class="btn ghost sm" id="rp-csv">Отчёт CSV</button>
+          <button class="btn ghost sm" id="jr-csv">Журнал CSV</button>
+        </div>
+      </div>
+      <h2 id="rp-title">Отчёт</h2>
+      <div class="grid" id="rp-stats"></div>
+      <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(300px,1fr));margin-top:12px">
+        <div class="card"><div class="faint" style="margin-bottom:10px">По сервисам</div><div class="bars" id="rp-gates"></div></div>
+        <div class="card"><div class="faint">По дням</div><div class="days" id="rp-days"></div><div class="faint row" style="justify-content:space-between" id="rp-days-axis"></div></div>
+      </div>
+      <h2>Журнал сессий</h2>
+      <div class="card tbl"><table><thead><tr><th>Время</th><th>Событие</th><th>Сервис</th><th>Устройство</th><th>Причина</th></tr></thead><tbody id="journal"></tbody></table></div>
+    </section>
+
+    <!-- Устройства -->
+    <section id="devices">
+      <h2>Чёрный список</h2>
+      <div class="card">
+        <form class="row" id="bl-form">
+          <input type="text" id="bl-value" placeholder="MAC или IP, например aa:bb:cc:dd:ee:ff" style="flex:2;min-width:220px">
+          <input type="text" id="bl-note" placeholder="Заметка" style="flex:1;min-width:140px">
+          <button class="btn" type="submit">Заблокировать</button>
+        </form>
+        <div class="faint" style="margin-top:8px">Лимит попыток и пауза считаются по MAC, если роутер его отдаёт; блокировка по MAC переживает смену IP.</div>
+      </div>
+      <div class="card tbl" style="margin-top:12px"><table><thead><tr><th>Устройство</th><th>Заметка</th><th>Кто</th><th></th></tr></thead><tbody id="blocklist"></tbody></table></div>
+      <h2>Последние сессии</h2>
+      <div class="card tbl"><table><thead><tr><th>Время</th><th>Сервис</th><th>IP</th><th>MAC</th><th>Состояние</th><th></th></tr></thead><tbody id="recent"></tbody></table></div>
+    </section>
+
+    <!-- Узлы -->
+    <section id="hosts">
+      <div class="card row" style="justify-content:space-between">
+        <div class="muted">Резолвится ли каждый узел каталога и открывается ли порт 443 с машины NoNetPass.</div>
+        <button class="btn" id="hosts-go">Проверить узлы</button>
+      </div>
+      <div id="hosts-out" style="margin-top:12px"></div>
+    </section>
+
+    <!-- Настройки -->
+    <section id="settings">
+      <h2>Окна и лимиты</h2>
+      <form class="card grid" id="st-form" style="grid-template-columns:repeat(auto-fill,minmax(200px,1fr))">
+        <label class="f">Окно входа в сеть, с<input type="number" id="st-verify_window" min="10" max="3600"></label>
+        <label class="f">Окно оплаты, с<input type="number" id="st-pay_window" min="10" max="3600"></label>
+        <label class="f">Продление, с<input type="number" id="st-extend_seconds" min="0" max="1800"></label>
+        <label class="f">Продлений за окно<input type="number" id="st-max_extends" min="0" max="5"></label>
+        <label class="f">Пауза между окнами, с<input type="number" id="st-cooldown_seconds" min="0" max="3600"></label>
+        <label class="f">Окон в час на устройство<input type="number" id="st-max_opens_per_hour" min="1" max="100"></label>
+        <div class="row" style="grid-column:1/-1"><button class="btn" type="submit">Сохранить</button><span class="faint" id="st-saved"></span></div>
+      </form>
+      <h2>Telegram</h2>
+      <div class="card row" style="justify-content:space-between">
+        <div><b id="tg-state">—</b><div class="faint" id="tg-sub"></div></div>
+        <button class="btn ghost" id="tg-test">Отправить проверку</button>
+      </div>
+    </section>
+
+    <!-- Система -->
+    <section id="system">
+      <h2>Перезагрузка</h2>
+      <div class="grid" id="targets"></div>
+      <div class="faint" style="margin-top:10px">Каждая перезагрузка требует подтверждения, попадает в журнал и в Telegram. Повтор для одной цели не раньше чем через 5 минут.</div>
+      <h2>Действия администратора</h2>
+      <div class="card tbl"><table><thead><tr><th>Время</th><th>Действие</th><th>Кто</th><th>Детали</th></tr></thead><tbody id="audit"></tbody></table></div>
+    </section>
+  </div>
+</div>
+
+<div class="modal" id="modal"><div class="card">
+  <h3 id="m-title">Подтвердите</h3>
+  <div class="muted" id="m-text"></div>
+  <div class="row" style="margin-top:18px;justify-content:flex-end">
+    <button class="btn ghost" id="m-no">Отмена</button>
+    <button class="btn danger" id="m-yes">Да</button>
+  </div>
+</div></div>
+<div class="toast" id="toast"></div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const ICON = { ok: "✓", warn: "!", fail: "✕", unknown: "…" };
+const WORD = { ok: "Всё работает", warn: "Есть предупреждения", fail: "Есть сбои", unknown: "Проверяется" };
+const EVENT = { detected: "обнаружен", opened: "окно открыто", closed: "закрыто", extended: "продлено",
+  grant_failed: "роутер не открыл", revoke_failed: "роутер не закрыл", extend_failed: "не продлено" };
+const REASON = { code_entered: "код введён", expired: "истекло", abandoned: "не открывали", revoked: "админ",
+  shutdown: "остановка", restart: "после рестарта", error: "ошибка" };
+const AUDIT = { admin_login: "вход в панель", admin_login_failed: "неверный вход", reboot_requested: "запрос перезагрузки",
+  reboot_sent: "перезагрузка", reboot_failed: "перезагрузка не удалась", block: "блокировка", unblock: "разблокировка",
+  revoke: "окно закрыто", revoke_all: "все окна закрыты", settings: "настройки", telegram_denied: "чужой в боте" };
+let state = null, tick = null;
+
+function toast(text, bad) {
+  const t = $("toast"); t.textContent = text; t.style.color = bad ? "var(--err)" : "var(--text)";
+  t.classList.add("show"); clearTimeout(toast.t); toast.t = setTimeout(() => t.classList.remove("show"), 4000);
+}
+function when(ts, full) {
+  const d = new Date(ts * 1000);
+  return full ? d.toLocaleString("ru-RU", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit" })
+              : d.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
+}
+function mmss(sec) { sec = Math.max(0, Math.ceil(sec)); return Math.floor(sec / 60) + ":" + String(sec % 60).padStart(2, "0"); }
+
+async function api(path, opts = {}) {
+  const r = await fetch(path, { ...opts, headers: { "Content-Type": "application/json", "X-NoNetPass": "1", ...(opts.headers || {}) },
+    body: opts.body ? JSON.stringify(opts.body) : undefined, credentials: "same-origin" });
+  if (r.status === 401) { showLogin(); throw new Error("нужен вход"); }
+  const data = r.headers.get("content-type")?.includes("json") ? await r.json() : await r.text();
+  if (!r.ok) throw new Error(data.detail || r.statusText);
+  return data;
+}
+function confirmBox(title, text, yes = "Да") {
+  return new Promise((resolve) => {
+    $("m-title").textContent = title; $("m-text").textContent = text; $("m-yes").textContent = yes;
+    $("modal").classList.add("show");
+    const done = (v) => { $("modal").classList.remove("show"); $("m-yes").onclick = $("m-no").onclick = null; resolve(v); };
+    $("m-yes").onclick = () => done(true); $("m-no").onclick = () => done(false);
+  });
+}
+
+/* ---------- вход ---------- */
+let pin = "";
+async function showLogin() {
+  $("app").hidden = true; $("login").hidden = false;
+  const st = await (await fetch("/api/admin/auth")).json();
+  if (!st.network_ok) { $("lg-err").textContent = "Админ-панель недоступна из этой сети."; return; }
+  if (!st.methods.length) { $("lg-err").textContent = "Вход не настроен: задайте NONETPASS_ADMIN_PIN или NONETPASS_ADMIN_USER и NONETPASS_ADMIN_PASSWORD."; return; }
+  const usePin = st.methods.includes("pin");
+  $("pin-box").hidden = !usePin; $("pw-box").hidden = usePin;
+  $("switch-box").hidden = st.methods.length < 2;
+  if (st.locked) $("lg-err").textContent = `Слишком много попыток, подождите ${st.locked} с.`;
+  renderPin();
+}
+function renderPin() { $("pin-dots").innerHTML = Array.from({ length: Math.max(4, pin.length) }, (_, i) => `<i class="${i < pin.length ? "f" : ""}"></i>`).join(""); }
+function buildPad() {
+  const keys = ["1","2","3","4","5","6","7","8","9","⌫","0","→"];
+  $("pad").innerHTML = keys.map((k) => `<button type="button" data-k="${k}">${k}</button>`).join("");
+  $("pad").onclick = (e) => {
+    const k = e.target.dataset.k; if (!k) return;
+    if (k === "⌫") pin = pin.slice(0, -1); else if (k === "→") return login({ pin }); else if (pin.length < 12) pin += k;
+    renderPin();
+  };
+  document.addEventListener("keydown", (e) => {
+    if ($("login").hidden || $("pin-box").hidden) return;
+    if (/^\d$/.test(e.key) && pin.length < 12) pin += e.key; else if (e.key === "Backspace") pin = pin.slice(0, -1);
+    else if (e.key === "Enter") return login({ pin }); renderPin();
+  });
+}
+async function login(body) {
+  $("lg-err").textContent = "";
+  try {
+    const r = await fetch("/api/admin/login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.detail);
+    pin = ""; $("login").hidden = true; start();
+  } catch (e) { pin = ""; renderPin(); $("lg-err").textContent = e.message; }
+}
+$("pw-box").onsubmit = (e) => { e.preventDefault(); login({ user: $("lg-user").value, password: $("lg-pass").value }); };
+$("switch").onclick = () => { const p = $("pin-box").hidden; $("pin-box").hidden = !p; $("pw-box").hidden = p; $("switch").textContent = p ? "Войти по паролю" : "Войти по PIN"; };
+$("logout").onclick = async () => { await api("/api/admin/logout", { method: "POST" }); showLogin(); };
+
+/* ---------- обзор ---------- */
+function renderHealth(h) {
+  $("hero-icon").className = "big st-" + h.status; $("hero-icon").textContent = ICON[h.status];
+  $("hero-title").textContent = WORD[h.status];
+  const bad = h.checks.filter((c) => c.status === "fail" || c.status === "warn");
+  $("hero-sub").textContent = bad.length ? bad.map((c) => c.title + ": " + c.detail).join(" · ") : "Проверок: " + h.checks.length + " · работает " + uptime(h.uptime);
+  $("checks").innerHTML = h.checks.map((c) => `<div class="card check"><span class="dot ${c.status}"></span>
+    <div><div class="t">${esc(c.title)}</div><div class="d">${esc(c.detail || "—")}</div></div></div>`).join("");
+  renderAlerts(h.alerts);
+}
+function renderAlerts(alerts) {
+  $("alerts").innerHTML = alerts.length ? alerts.map((a) => `<div class="alert"><span class="dot ${a.level}"></span>
+    <div style="flex:1">${esc(a.text)}</div><time>${when(a.ts, true)}</time></div>`).join("") : `<div class="empty">Уведомлений нет</div>`;
+}
+function uptime(s) { const d = Math.floor(s / 86400), h = Math.floor(s % 86400 / 3600), m = Math.floor(s % 3600 / 60); return d ? `${d} д ${h} ч` : h ? `${h} ч ${m} мин` : `${m} мин`; }
+function renderStats(today, month) {
+  const items = [[today.authorizations, "Авторизаций сегодня"], [month.authorizations, "Авторизаций за месяц"],
+    [month.confirmed, "Код введён / оплачено"], [month.devices, "Устройств за месяц"]];
+  $("stats").innerHTML = items.map(([n, l]) => `<div class="card stat"><div class="n">${n}</div><div class="l">${l}</div></div>`).join("");
+}
+function renderWindows() {
+  const ws = state.windows;
+  $("close-all").disabled = !ws.length;
+  if (!ws.length) { $("windows").innerHTML = `<tr><td colspan="4" class="empty">Открытых окон нет</td></tr>`; return; }
+  $("windows").innerHTML = ws.map((s) => `<tr><td><span class="tag ${s.kind}">${esc(s.gate_name)}</span>${s.extends ? ' <span class="faint">+продлено</span>' : ""}</td>
+    <td class="mono">${esc(s.client_ip)}${s.mac ? `<div class="faint">${esc(s.mac)}</div>` : ""}</td>
+    <td class="mono" data-exp="${s.expires_at}">${mmss(s.expires_at - Date.now() / 1000)}</td>
+    <td style="text-align:right"><button class="btn ghost sm" data-close="${esc(s.id)}">Закрыть</button>
+    <button class="btn ghost sm" data-block="${esc(s.mac || s.client_ip)}" title="В чёрный список">🚫</button></td></tr>`).join("");
+}
+document.addEventListener("click", async (e) => {
+  const c = e.target.closest("[data-close]"), b = e.target.closest("[data-block]"), u = e.target.closest("[data-unblock]");
+  try {
+    if (c) { await api(`/api/admin/sessions/${c.dataset.close}/revoke`, { method: "POST" }); toast("Окно закрыто"); await refresh(); }
+    if (b && await confirmBox("Заблокировать устройство?", `${b.dataset.block} больше не сможет открывать окна, открытые окна закроются.`, "Заблокировать")) {
+      await api("/api/admin/blocklist", { method: "POST", body: { value: b.dataset.block } }); toast("Заблокировано"); await refresh(); }
+    if (u) { await api(`/api/admin/blocklist/${encodeURIComponent(u.dataset.unblock)}`, { method: "DELETE" }); toast("Разблокировано"); await refresh(); }
+  } catch (err) { toast(err.message, true); }
+});
+$("close-all").onclick = async () => {
+  if (!await confirmBox("Закрыть все окна?", `Будет закрыто окон: ${state.windows.length}.`, "Закрыть все")) return;
+  try { const r = await api("/api/admin/windows/close-all", { method: "POST" }); toast(`Закрыто окон: ${r.closed}`); refresh(); } catch (e) { toast(e.message, true); }
+};
+$("recheck").onclick = async () => { try { renderHealth(await api("/api/admin/health/check", { method: "POST" })); toast("Проверка выполнена"); } catch (e) { toast(e.message, true); } };
+
+/* ---------- отчёты ---------- */
+function periodQuery() {
+  const p = $("rp-preset").value;
+  if (p === "custom") return `start=${$("rp-start").value}&end=${$("rp-end").value || $("rp-start").value}`;
+  return `period=${encodeURIComponent(p)}`;
+}
+$("rp-preset").onchange = () => { $("rp-custom").hidden = $("rp-preset").value !== "custom"; if ($("rp-preset").value !== "custom") loadReport(); };
+$("rp-go").onclick = () => loadReport();
+$("rp-csv").onclick = () => { location.href = "/api/admin/report.csv?" + periodQuery(); };
+$("jr-csv").onclick = () => { location.href = "/api/admin/journal.csv?" + periodQuery(); };
+async function loadReport() {
+  try {
+    const r = await api("/api/admin/report?" + periodQuery());
+    $("rp-title").textContent = "Отчёт: " + r.period.label;
+    const pct = r.authorizations ? Math.round(100 * r.confirmed / r.authorizations) + "%" : "—";
+    const items = [[r.authorizations, "Авторизаций"], [r.verify, "Вход в сеть"], [r.pay, "Оплата"], [r.confirmed, "Код введён / оплачено"],
+      [pct, "Доля подтверждённых"], [r.expired, "Истекло"], [r.revoked, "Закрыл админ"], [r.devices, "Устройств"],
+      [r.extended, "Продлений"], [r.grant_failed + r.revoke_failed, "Ошибок роутера"]];
+    $("rp-stats").innerHTML = items.map(([n, l]) => `<div class="card stat"><div class="n">${n}</div><div class="l">${l}</div></div>`).join("");
+    const max = Math.max(1, ...r.by_gate.map((g) => g.count));
+    $("rp-gates").innerHTML = r.by_gate.length ? r.by_gate.map((g) => `<div class="bar-row"><span>${esc(g.gate)}</span>
+      <span class="track"><span class="fill" style="display:block;width:${100 * g.count / max}%"></span></span><b>${g.count}</b></div>`).join("") : `<div class="empty">Нет авторизаций</div>`;
+    const dmax = Math.max(1, ...r.by_day.map((d) => d.count));
+    $("rp-days").innerHTML = r.by_day.map((d) => `<div title="${d.day}: ${d.count}" style="height:${Math.max(4, 100 * d.count / dmax)}%"></div>`).join("") || `<span class="empty" style="flex:1">—</span>`;
+    $("rp-days-axis").innerHTML = r.by_day.length ? `<span>${r.by_day[0].day}</span><span>${r.by_day[r.by_day.length - 1].day}</span>` : "";
+    const j = await api("/api/admin/journal?limit=200");
+    $("journal").innerHTML = j.reverse().map((x) => `<tr><td class="mono">${when(x.ts, true)}</td><td>${EVENT[x.event] || esc(x.event)}</td>
+      <td><span class="tag ${x.kind}">${esc(x.gate_name)}</span></td><td class="mono">${esc(x.client_ip)}</td><td class="muted">${esc(REASON[x.reason || x.close_reason] || x.error || "")}</td></tr>`).join("")
+      || `<tr><td colspan="5" class="empty">Журнал пуст</td></tr>`;
+  } catch (e) { toast(e.message, true); }
+}
+
+/* ---------- устройства ---------- */
+function renderBlocklist() {
+  const bl = state.blocklist;
+  $("blocklist").innerHTML = bl.length ? bl.map((e) => `<tr><td class="mono">${esc(e.value)}</td><td>${esc(e.note || "")}</td>
+    <td class="faint">${esc(e.by || "")}</td><td style="text-align:right">${e.fixed ? '<span class="faint">из окружения</span>' : `<button class="btn ghost sm" data-unblock="${esc(e.value)}">Снять</button>`}</td></tr>`).join("")
+    : `<tr><td colspan="4" class="empty">Чёрный список пуст</td></tr>`;
+}
+async function loadRecent() {
+  const rows = await api("/api/admin/sessions?limit=50");
+  $("recent").innerHTML = rows.map((s) => `<tr><td class="mono">${when(s.created_at, true)}</td><td><span class="tag ${s.kind}">${esc(s.gate_name)}</span></td>
+    <td class="mono">${esc(s.client_ip)}</td><td class="mono faint">${esc(s.mac || "—")}</td>
+    <td>${s.state === "closed" ? esc(REASON[s.close_reason] || s.close_reason) : s.state === "open" ? "открыто" : "обнаружен"}</td>
+    <td style="text-align:right"><button class="btn ghost sm" data-block="${esc(s.mac || s.client_ip)}" title="В чёрный список">🚫</button></td></tr>`).join("")
+    || `<tr><td colspan="6" class="empty">Сессий пока нет</td></tr>`;
+}
+$("bl-form").onsubmit = async (e) => {
+  e.preventDefault();
+  try { const r = await api("/api/admin/blocklist", { method: "POST", body: { value: $("bl-value").value, note: $("bl-note").value } });
+    toast(`Заблокировано: ${r.value}` + (r.closed ? `, закрыто окон: ${r.closed}` : "")); $("bl-value").value = $("bl-note").value = ""; refresh(); }
+  catch (err) { toast(err.message, true); }
+};
+
+/* ---------- узлы ---------- */
+$("hosts-go").onclick = async () => {
+  $("hosts-go").disabled = true; $("hosts-out").innerHTML = `<div class="card empty">Проверяю…</div>`;
+  try {
+    const rows = await api("/api/admin/hosts");
+    $("hosts-out").innerHTML = rows.map((g) => `<div class="card tbl" style="margin-bottom:12px">
+      <div class="row" style="padding:6px 4px 8px"><span class="dot ${g.reachable === g.hosts.length ? "ok" : g.ok ? "warn" : "fail"}" style="margin:0"></span>
+      <b>${esc(g.name)}</b><span class="tag ${g.kind}">${g.kind === "pay" ? "оплата" : "вход"}</span><span class="faint">доступно ${g.reachable} из ${g.hosts.length}</span></div>
+      <table><tbody>${g.hosts.map((h) => `<tr><td class="mono">${esc(h.host)}</td><td>${h.dns ? "DNS ✓" : "DNS ✕"}</td>
+      <td class="mono faint">${esc(h.addresses.join(", "))}</td><td>${h.tcp ? `443 ✓ ${h.ms} мс` : `<span class="muted">${esc(h.error || "")}</span>`}</td></tr>`).join("")}</tbody></table></div>`).join("");
+  } catch (e) { $("hosts-out").innerHTML = ""; toast(e.message, true); }
+  $("hosts-go").disabled = false;
+};
+
+/* ---------- настройки ---------- */
+function renderSettings() {
+  for (const [k, v] of Object.entries(state.settings)) { const el = $("st-" + k); if (el && document.activeElement !== el) el.value = Math.round(v); }
+  const tg = state.telegram;
+  const check = state.health.checks.find((c) => c.id === "telegram");
+  $("tg-state").textContent = tg.configured ? (check ? check.detail : "подключается") : "Бот не настроен";
+  $("tg-sub").textContent = tg.configured ? `Администраторов: ${tg.admins}. Уведомления о сбоях, отчёты, перезагрузка.` : "Задайте NONETPASS_TELEGRAM_TOKEN и NONETPASS_TELEGRAM_ADMIN_IDS.";
+  $("tg-test").disabled = !tg.configured;
+}
+$("st-form").onsubmit = async (e) => {
+  e.preventDefault();
+  const body = {};
+  for (const k of Object.keys(state.settings)) { const v = $("st-" + k).value; if (v !== "") body[k] = Number(v); }
+  try { state.settings = await api("/api/admin/settings", { method: "PUT", body }); $("st-saved").textContent = "Сохранено " + when(Date.now() / 1000); }
+  catch (err) { toast(err.message, true); }
+};
+$("tg-test").onclick = async () => { try { await api("/api/admin/telegram/test", { method: "POST" }); toast("Сообщение отправлено в Telegram"); } catch (e) { toast(e.message, true); } };
+
+/* ---------- система ---------- */
+function renderTargets() {
+  $("targets").innerHTML = state.routers.map((t) => `<div class="card"><b>${esc(t.title)}</b>
+    <div class="faint" style="margin:4px 0 12px">${t.available ? (t.primary ? "открывает окна" : t.kind === "router" ? "мониторинг и перезагрузка" : t.kind === "service" ? "окна закроются, служба поднимется сама" : "команда NONETPASS_HOST_REBOOT_CMD") : "не настроено"}</div>
+    <button class="btn danger sm" data-reboot="${esc(t.id)}" data-title="${esc(t.title)}" ${t.available ? "" : "disabled"}>Перезагрузить</button></div>`).join("");
+}
+$("targets").onclick = async (e) => {
+  const b = e.target.closest("[data-reboot]"); if (!b) return;
+  const open = state.windows.length;
+  if (!await confirmBox("Перезагрузить?", `${b.dataset.title}.` + (open ? ` Открытые окна (${open}) будут закрыты.` : "") + " Действие попадёт в журнал.", "Перезагрузить")) return;
+  try { const r = await api(`/api/admin/reboot/${b.dataset.reboot}`, { method: "POST", body: { confirm: b.dataset.reboot } }); toast(r.message); loadAudit(); }
+  catch (err) { toast(err.message, true); }
+};
+async function loadAudit() {
+  const rows = await api("/api/admin/journal?audit=true&limit=100");
+  $("audit").innerHTML = rows.reverse().map((r) => {
+    const { ts, event, actor, audit, ...rest } = r;
+    return `<tr><td class="mono">${when(ts, true)}</td><td>${AUDIT[event] || esc(event)}</td><td class="faint">${esc(actor || rest.ip || "")}</td>
+      <td class="faint mono">${esc(Object.entries(rest).filter(([k]) => k !== "ip").map(([k, v]) => k + "=" + v).join(" "))}</td></tr>`;
+  }).join("") || `<tr><td colspan="4" class="empty">Пока ничего</td></tr>`;
+}
+
+/* ---------- данные ---------- */
+async function refresh() {
+  state = await api("/api/admin/overview");
+  renderHealth(state.health); renderStats(state.today, state.month); renderWindows(); renderBlocklist(); renderSettings(); renderTargets();
+}
+function connect() {
+  const ws = new WebSocket((location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/ws/admin");
+  let ping;
+  ws.onopen = () => { ping = setInterval(() => ws.send("ping"), 20000); };
+  ws.onclose = (e) => { clearInterval(ping); if (e.code !== 4401) setTimeout(connect, 3000); };
+  ws.onmessage = (ev) => {
+    const m = JSON.parse(ev.data);
+    if (m.type === "session") { clearTimeout(connect.t); connect.t = setTimeout(refresh, 300); }
+    if (m.type === "alert") { toast(m.alert.text, m.alert.level !== "ok"); state.health.alerts.unshift(m.alert); state.health.status = m.status; refresh(); }
+  };
+}
+document.querySelectorAll("#nav button").forEach((b) => b.onclick = () => {
+  document.querySelectorAll("#nav button").forEach((x) => x.classList.toggle("on", x === b));
+  document.querySelectorAll("section").forEach((s) => s.classList.toggle("on", s.id === b.dataset.tab));
+  history.replaceState(null, "", "#" + b.dataset.tab);
+  if (b.dataset.tab === "reports") loadReport();
+  if (b.dataset.tab === "devices") loadRecent().catch((e) => toast(e.message, true));
+  if (b.dataset.tab === "system") loadAudit().catch((e) => toast(e.message, true));
+});
+
+/* тема: авто → светлая → тёмная */
+const THEMES = ["auto", "light", "dark"];
+function applyTheme(t) { if (t === "auto") delete document.documentElement.dataset.theme; else document.documentElement.dataset.theme = t; }
+let theme = "auto"; try { theme = localStorage.getItem("nonetpass-theme") || "auto"; } catch {}
+applyTheme(theme);
+$("theme").onclick = () => { theme = THEMES[(THEMES.indexOf(theme) + 1) % 3]; applyTheme(theme); try { localStorage.setItem("nonetpass-theme", theme); } catch {} toast("Тема: " + ({ auto: "как в системе", light: "светлая", dark: "тёмная" })[theme]); };
+
+async function start() {
+  $("app").hidden = false;
+  await refresh();
+  connect();
+  clearInterval(tick);
+  tick = setInterval(() => document.querySelectorAll("[data-exp]").forEach((el) => el.textContent = mmss(el.dataset.exp - Date.now() / 1000)), 1000);
+  const tab = location.hash.slice(1);
+  if (tab) document.querySelector(`#nav button[data-tab="${tab}"]`)?.click();
+}
+buildPad();
+fetch("/api/admin/auth").then((r) => r.json()).then((st) => st.authenticated ? start().catch(() => {}) : showLogin());
+</script>
+</body>
+</html>

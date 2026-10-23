@@ -1,0 +1,10 @@
+global:
+  scrape_interval: 30s
+scrape_configs:
+  - job_name: nonetpass
+    metrics_path: /metrics
+    # Если задан NONETPASS_METRICS_TOKEN:
+    # authorization:
+    #   credentials: <токен>
+    static_configs:
+      - targets: ["nonetpass:8080"]

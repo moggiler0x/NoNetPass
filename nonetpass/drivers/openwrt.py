@@ -14,7 +14,8 @@ import json
 
 import httpx
 
-from .base import DriverError, Grant, RouterDriver, resolve_ipv4, validate_ipv4
+from ..blocklist import normalize_mac
+from .base import DriverError, Grant, RouterDriver, reboot_dropped, resolve_ipv4, validate_ipv4
 
 ANON_SESSION = "0" * 32
 UBUS_PERMISSION_DENIED = 6
@@ -23,6 +24,7 @@ UBUS_PERMISSION_DENIED = 6
 class OpenWrtDriver(RouterDriver):
     name = "openwrt"
     router_side_timeout = True
+    can_reboot = True
 
     def __init__(
         self,
@@ -73,6 +75,13 @@ class OpenWrtDriver(RouterDriver):
         self._sid = result[1]["ubus_rpc_session"]
         return self._sid
 
+    async def _call(self, obj: str, method: str, args: dict) -> list:
+        sid = self._sid or await self._login()
+        result = await self._rpc(sid, obj, method, args)
+        if result[0] == UBUS_PERMISSION_DENIED:
+            result = await self._rpc(await self._login(), obj, method, args)
+        return result
+
     async def _nft(self, *params: str) -> dict:
         args = {"command": "/usr/sbin/nft", "params": list(params)}
         sid = self._sid or await self._login()
@@ -110,6 +119,26 @@ class OpenWrtDriver(RouterDriver):
         result = await self._rpc(sid, "system", "board", {})
         info = result[1] if result[0] == 0 and len(result) > 1 else {}
         return {"ok": result[0] == 0, "model": info.get("model"), "release": info.get("release", {}).get("description")}
+
+    async def lookup_mac(self, client_ip: str) -> str | None:
+        result = await self._call("file", "read", {"path": "/proc/net/arp"})
+        if result[0] != 0 or len(result) < 2:
+            return None
+        for line in result[1].get("data", "").splitlines()[1:]:
+            parts = line.split()
+            if len(parts) >= 4 and parts[0] == client_ip:
+                return normalize_mac(parts[3])
+        return None
+
+    async def reboot(self) -> None:
+        try:
+            result = await self._call("system", "reboot", {})
+        except DriverError as exc:
+            if isinstance(exc.__cause__, Exception) and reboot_dropped(exc.__cause__):
+                return
+            raise
+        if result[0] != 0:
+            raise DriverError(f"openwrt: reboot, ubus code {result[0]} (нужен доступ system.reboot в ACL rpcd)")
 
     async def aclose(self) -> None:
         await self.client.aclose()

@@ -133,3 +133,59 @@ async def test_subscribers_get_events(tmp_path):
     msg = queue.get_nowait()
     assert msg["session"]["state"] == "detected" and msg["session"]["gate_name"] == "VK"
     assert other.empty()
+
+
+async def test_limits_follow_mac_across_ip_change(tmp_path):
+    manager, driver = make(tmp_path, max_opens_per_hour=1)
+    driver.macs = {IP: "aa:bb:cc:dd:ee:01", "192.168.1.24": "aa:bb:cc:dd:ee:01"}
+    await manager.open(IP, LONG)
+    await manager.complete(IP)
+    # DHCP выдал новый IP, но устройство то же: лимит не сбрасывается.
+    with pytest.raises(OpenRefused, match="лимит"):
+        await manager.open("192.168.1.24", LONG)
+
+
+async def test_extend_once_reschedules_timer(tmp_path):
+    manager, driver = make(tmp_path, extend_seconds=0.3, max_extends=1)
+    session = await manager.open(IP, VK)
+    await manager.extend(IP, VK)
+    with pytest.raises(OpenRefused, match="уже продлено"):
+        await manager.extend(IP, VK)
+    await asyncio.sleep(0.3)
+    assert session.state == State.OPEN  # без продления окно 0.2 с уже закрылось бы
+    await asyncio.sleep(0.35)
+    assert session.close_reason == CloseReason.EXPIRED and IP not in driver.active
+
+
+async def test_open_windows_are_closed_after_restart(tmp_path):
+    from nonetpass.store import StateStore
+
+    state = str(tmp_path / "state.json")
+    settings = Settings(cooldown_seconds=0)
+    first_driver = MockDriver()
+    first = SessionManager(settings, first_driver, SessionJournal(str(tmp_path / "log.jsonl")), StateStore(state))
+    session = await first.open(IP, LONG)
+    # Процесс «упал»: окно не закрыто, запись осталась в файле состояния.
+    for timer in first._timers.values():
+        timer.cancel()
+    second_driver = MockDriver()
+    second = SessionManager(settings, second_driver, SessionJournal(str(tmp_path / "log.jsonl")), StateStore(state))
+    assert await second.recover() == 1
+    assert second_driver.calls == [("revoke", IP)]
+    assert StateStore(state).windows == {}
+    last = second.journal.tail(1)[0]
+    assert last["event"] == "closed" and last["reason"] == "restart" and last["id"] == session.id
+    assert await second.recover() == 0
+
+
+async def test_recover_keeps_record_if_router_has_no_timeout(tmp_path):
+    from nonetpass.store import StateStore
+
+    store = StateStore(str(tmp_path / "state.json"))
+    store.remember_window("abc", {"client_ip": IP, "gate_id": "vk", "handle": IP})
+    driver = MockDriver(fail_revoke=1)
+    manager = SessionManager(Settings(), driver, SessionJournal(None), store)
+    await manager.recover()
+    assert "abc" in store.windows  # MockDriver без таймаута: попробуем при следующем старте
+    await manager.recover()
+    assert store.windows == {}
