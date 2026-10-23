@@ -14,7 +14,9 @@
   127.0.0.99 (соседи). Браузер каждого устройства ходит в сеть только со
   своего адреса;
 * NoNetPass с драйвером nftables, детекцией по логу dnsmasq и каталогом
-  шлюзов по умолчанию (вход в сеть 2 мин, оплата 5 мин).
+  шлюзов по умолчанию (вход в сеть 2 мин, оплата 5 мин);
+* второй роутер Keenetic, который не отвечает: на нём видно мониторинг,
+  уведомление о сбое в админ-панели и список целей перезагрузки.
 
 Скрипт проходит сценарий, проверяет доступ с каждого устройства к каждому
 сервису и снимает скриншоты портала в docs/screenshots.
@@ -61,7 +63,8 @@ BODIES = {
 SERVED = {"api.vk.ru": "vk", "login.vk.ru": "vk", "im.vk.com": "vk", "api.vk.com": "vk", "login.vk.com": "vk", "3ds.vtb.ru": "vtb", "api.vtb.ru": "vtb"}
 USER, PAYER, LATE, NEIGHBOUR = "127.0.0.23", "127.0.0.24", "127.0.0.25", "127.0.0.99"
 PORT = 8080
-VERIFY_WINDOW, PAY_WINDOW = 120, 300
+VERIFY_WINDOW, PAY_WINDOW, EXTEND = 120, 300, 60
+ADMIN_PIN = "2468"
 # Свой Chromium (например, /opt/pw-browsers/chromium); иначе тот, что ставит playwright install.
 CHROMIUM = os.environ.get("CHROMIUM") or None
 
@@ -78,6 +81,7 @@ table inet fw4 {{
 """
 
 report: list[str] = []
+ADMIN = {"Authorization": "Bearer lab-admin"}
 local = httpx.Client(base_url=f"http://127.0.0.1:{PORT}", trust_env=False)
 
 
@@ -274,6 +278,19 @@ def shot(page, name: str) -> None:
     page.screenshot(path=SHOTS / f"{name}.png")
 
 
+def admin_overview() -> None:
+    """Обзор админ-панели для README: широкий экран и телефон рядом."""
+    wide = Image.open(SHOTS / "9-admin-overview.png")
+    wide = wide.crop((0, 0, wide.width, min(wide.height, 900)))
+    phone = Image.open(SHOTS / "10-admin-mobile.png")
+    phone = phone.resize((phone.width * wide.height // phone.height, wide.height), Image.LANCZOS)
+    gap = 28
+    out = Image.new("RGB", (wide.width + phone.width + 3 * gap, wide.height + 2 * gap), "#05070b")
+    out.paste(wide, (gap, gap))
+    out.paste(phone, (wide.width + 2 * gap, gap))
+    out.save(SHOTS / "admin-overview.png", optimize=True)
+
+
 def overview(names: list[str]) -> None:
     images = [Image.open(SHOTS / f"{n}.png") for n in names]
     images = [im.resize((im.width // 2, im.height // 2), Image.LANCZOS) for im in images]
@@ -292,6 +309,18 @@ def overview(names: list[str]) -> None:
 
 def start_nonetpass(tmp: Path) -> subprocess.Popen:
     env = {
+        "NONETPASS_ADMIN_PIN": ADMIN_PIN,
+        "NONETPASS_SECRET": "lab-secret",
+        "NONETPASS_STATE_PATH": str(tmp / "state.json"),
+        "NONETPASS_EXTEND_SECONDS": str(EXTEND),
+        "NONETPASS_HEALTH_INTERVAL_SECONDS": "3",
+        "NONETPASS_ROUTER_NAME": "lab-nft",
+        # Второй роутер только для мониторинга и перезагрузки; он не отвечает.
+        "NONETPASS_ROUTERS": "keenetic",
+        "NONETPASS_ROUTER_KEENETIC_DRIVER": "keenetic",
+        "NONETPASS_ROUTER_KEENETIC_URL": "http://127.0.0.9:1",
+        "NONETPASS_ROUTER_KEENETIC_USER": "admin",
+        "NONETPASS_ROUTER_KEENETIC_PASSWORD": "lab",
         **os.environ,
         "NONETPASS_DRIVER": "nftables",
         "NONETPASS_VERIFY_WINDOW_SECONDS": str(VERIFY_WINDOW),
@@ -301,10 +330,11 @@ def start_nonetpass(tmp: Path) -> subprocess.Popen:
         "NONETPASS_LOG_PATH": str(tmp / "sessions.jsonl"),
         "NONETPASS_DNS_LOG_PATH": str(tmp / "dnsmasq.log"),
     }
-    (tmp / "dnsmasq.log").write_text("")
+    if not (tmp / "dnsmasq.log").exists():
+        (tmp / "dnsmasq.log").write_text("")
     proc = subprocess.Popen(
         [sys.executable, "-m", "nonetpass", "--host", "127.0.0.1", "--port", str(PORT)],
-        cwd=ROOT, env=env, stdout=open(tmp / "nonetpass.log", "w"), stderr=subprocess.STDOUT,
+        cwd=ROOT, env=env, stdout=open(tmp / "nonetpass.log", "a"), stderr=subprocess.STDOUT,
     )
     for _ in range(50):
         try:
@@ -313,6 +343,27 @@ def start_nonetpass(tmp: Path) -> subprocess.Popen:
         except httpx.HTTPError:
             time.sleep(0.2)
     raise RuntimeError((tmp / "nonetpass.log").read_text())
+
+
+def admin_page(browser, dark: bool = True, width: int = 1280, height: int = 900):
+    page = browser.new_page(viewport={"width": width, "height": height}, device_scale_factor=2 if width < 600 else 1,
+                            color_scheme="dark" if dark else "light")
+    page.goto(f"http://127.0.0.1:{PORT}/admin")
+    page.wait_for_selector("#pad button")
+    return page
+
+
+def admin_login(page) -> None:
+    for key in ADMIN_PIN:
+        page.click(f"#pad button[data-k='{key}']")
+    page.click("#pad button[data-k='→']")
+    page.wait_for_selector("#checks .card")
+    page.wait_for_timeout(500)
+
+
+def admin_tab(page, tab: str) -> None:
+    page.click(f"#nav button[data-tab='{tab}']")
+    page.wait_for_timeout(700)
 
 
 def main() -> None:
@@ -380,14 +431,36 @@ def main() -> None:
             check(PAYER)
             say(f"  портал: {page.text_content('#lead')} Таймер {page.text_content('#num')}")
 
-            say(f"\n7. Окна истекают сами: {LATE} открывает «VK» и ничего не нажимает")
+            say(f"\n7. Окна истекают сами: {LATE} открывает «VK», продлевает один раз и ничего больше не нажимает")
             late_browser = late.browser(pw)
             late_page = open_portal(late_browser, late)
             late_page.click("#verify-grid .gate:has-text('VK')")
             late_page.wait_for_selector("#reach:text-is('узлы доступны')", timeout=8000)
             say(f"  сразу:            {LATE} → im.vk.com  {reach(LATE, 'im.vk.com')}")
-            late_page.wait_for_selector("#overlay", state="hidden", timeout=(VERIFY_WINDOW + 10) * 1000)
-            say(f"  после {VERIFY_WINDOW // 60} мин:    {LATE} → im.vk.com  {reach(LATE, 'im.vk.com')}")
+            say(f"  {LATE} нажимает «{late_page.text_content('#extend')}»")
+            late_page.click("#extend")
+            late_page.wait_for_selector("#extend", state="hidden")
+            say(f"  портал: таймер {late_page.text_content('#num')}, кнопка «Продлить» больше не показывается")
+
+            say("\n8. Админ-панель: вход по PIN, открытые окна, мониторинг")
+            admin_browser = pw.chromium.launch(executable_path=CHROMIUM)
+            admin = admin_page(admin_browser)
+            shot(admin, "8-admin-login")
+            admin_login(admin)
+            admin.wait_for_selector("#alerts .alert", timeout=20000)
+            admin.wait_for_timeout(600)
+            rows = admin.locator("#windows tr").count()
+            alert = admin.locator("#alerts .alert div").first.text_content().strip()
+            say(f"  открытых окон в панели: {rows}; статус: {admin.text_content('#hero-title')}")
+            say(f"  уведомление: {' '.join(alert.split())}")
+            admin.screenshot(path=SHOTS / "9-admin-overview.png", full_page=True)
+            mobile = admin_page(admin_browser, dark=False, width=390, height=780)
+            admin_login(mobile)
+            shot(mobile, "10-admin-mobile")
+            mobile.close()
+
+            late_page.wait_for_selector("#overlay", state="hidden", timeout=(VERIFY_WINDOW + EXTEND + 10) * 1000)
+            say(f"  после {(VERIFY_WINDOW + EXTEND) // 60} мин:    {LATE} → im.vk.com  {reach(LATE, 'im.vk.com')}")
             say(f"  в это время ВТБ:  {PAYER} → 3ds.vtb.ru {reach(PAYER, '3ds.vtb.ru')}")
             page.wait_for_selector("#overlay", state="hidden", timeout=(PAY_WINDOW + 10) * 1000)
             say(f"  после {PAY_WINDOW // 60} мин:    {PAYER} → 3ds.vtb.ru {reach(PAYER, '3ds.vtb.ru')}")
@@ -395,8 +468,37 @@ def main() -> None:
             late_browser.close()
             browser.close()
 
-        say("\n8. Журнал сессий (/api/admin/journal)")
-        journal = local.get("/api/admin/journal", headers={"Authorization": "Bearer lab-admin"}).json()
+            say("\n9. Отчёт об авторизациях за сегодня и проверка узлов")
+            admin_tab(admin, "reports")
+            admin.select_option("#rp-preset", "today")
+            admin.wait_for_timeout(800)
+            totals = local.get("/api/admin/report?period=today", headers=ADMIN).json()
+            say(f"  авторизаций: {totals['authorizations']} (вход {totals['verify']}, оплата {totals['pay']}), "
+                f"код введён: {totals['confirmed']}, истекло: {totals['expired']}, продлений: {totals['extended']}")
+            say("  по сервисам: " + ", ".join(f"{g['gate']} {g['count']}" for g in totals["by_gate"]))
+            admin.screenshot(path=SHOTS / "11-admin-reports.png", full_page=True)
+            admin_tab(admin, "hosts")
+            admin.click("#hosts-go")
+            admin.wait_for_selector("#hosts-out .card table", timeout=30000)
+            admin_tab(admin, "system")
+            targets = [t["title"] + ("" if t["available"] else " (не настроено)")
+                       for t in local.get("/api/admin/reboot", headers=ADMIN).json()]
+            say("  цели перезагрузки: " + "; ".join(targets))
+            admin.screenshot(path=SHOTS / "12-admin-system.png", full_page=True)
+            admin_browser.close()
+
+        say("\n10. Автооткат после сбоя: окно открыто, NoNetPass убит через kill -9")
+        httpx.post(user.url + "api/me/open", json={"gate": "vk"}, trust_env=False).raise_for_status()
+        say(f"  nft nonetpass_pairs: {pairs()}")
+        nonetpass.kill()
+        nonetpass.wait(10)
+        say(f"  после падения:    {USER} → im.vk.com  {reach(USER, 'im.vk.com')}")
+        nonetpass = start_nonetpass(tmp)
+        say(f"  после перезапуска: {USER} → im.vk.com  {reach(USER, 'im.vk.com')}")
+        say(f"  nft nonetpass_pairs: {pairs()}")
+
+        say("\n11. Журнал сессий (/api/admin/journal)")
+        journal = local.get("/api/admin/journal?limit=50", headers=ADMIN).json()
         for rec in journal:
             reason = f" ({rec['close_reason']})" if rec.get("close_reason") else ""
             src = f", источник {rec['source']}" if rec["event"] == "detected" else ""
@@ -407,6 +509,7 @@ def main() -> None:
         nonetpass.wait(10)
 
     overview(["2-gates", "4-open-verify", "7-open-pay"])
+    admin_overview()
     (SHOTS / "lab-report.txt").write_text("\n".join(report) + "\n", encoding="utf-8")
 
 

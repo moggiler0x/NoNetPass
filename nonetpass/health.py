@@ -128,8 +128,9 @@ class HealthMonitor:
                 await self._set(f"router:{router.name}", title, OK,
                                 f"{version} · {info['latency_ms']} мс".strip(" ·"), info)
             else:
+                error = info.get("error")
                 await self._set(f"router:{router.name}", title, FAIL,
-                                info.get("error") or "нет связи", info, debounce=True)
+                                f"нет связи: {error}" if error else "нет связи", info, debounce=True)
         await self._check_driver()
         await self._check_overdue()
         await self._check_storage()
