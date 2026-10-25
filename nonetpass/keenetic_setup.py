@@ -248,7 +248,7 @@ class AutoSetup:
                 await driver.parse([cmd])
             except DriverError as exc:
                 # Повторный запуск: правило или настройка уже есть — это не ошибка.
-                if not ALREADY.search(str(exc)):
+                if not (ALREADY.search(str(exc)) or cmd.startswith("no ") or " no " in cmd):
                     raise
         if self.setup.mode == "server":
             return await self._ensure_user(driver)

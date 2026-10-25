@@ -232,16 +232,20 @@ def test_usb_scripts_are_valid_sh(tmp_path):
 def test_server_mode_lets_guests_reach_portal_pc():
     setup = KeeneticSetup(nas_id="Sv1", mode="server", portal="192.168.1.50", rci_password="rci-pass-123")
     out = patch_startup_config(BASE, setup, load_catalog())
+    # Последний permit обязателен: иначе список закрывает гостям DHCP, DNS и интернет.
     assert block(out, "access-list _NONETPASS_PORTAL") == [
-        "permit tcp 0.0.0.0 0.0.0.0 192.168.1.50 255.255.255.255 port eq 8080"]
+        "permit tcp 0.0.0.0 0.0.0.0 192.168.1.50 255.255.255.255 port eq 8080",
+        "deny ip 0.0.0.0 0.0.0.0 192.168.1.0 255.255.255.0",
+        "permit ip 0.0.0.0 0.0.0.0 0.0.0.0 0.0.0.0"]
     bridge, chilli = block(out, "interface Bridge1"), block(out, "interface Chilli0")
-    assert bridge[-2:] == ["ip access-group _NONETPASS_PORTAL in", "up"]  # мост остаётся включённым
+    assert "ip access-group _NONETPASS_PORTAL in" not in bridge and bridge[-1] == "up"
     assert "ip access-group _NONETPASS_PORTAL in" in chilli
     heads = [i.head for i in parse(out)]
     assert heads.index("access-list _NONETPASS_PORTAL") < heads.index("interface Bridge1")
     assert patch_startup_config(out, setup, load_catalog()) == out
     cmds = cli_commands(setup, load_catalog(), BASE)
-    assert "interface Bridge1 ip access-group _NONETPASS_PORTAL in" in cmds
+    assert "interface Bridge1 no ip access-group _NONETPASS_PORTAL in" in cmds
+    assert cmds.index("no access-list _NONETPASS_PORTAL") < cmds.index("access-list _NONETPASS_PORTAL permit ip")
     # Компьютер в гостевой сети: правило не нужно.
     inside = KeeneticSetup(nas_id="Sv1", mode="server", portal="10.1.30.10", rci_password="rci-pass-123")
     assert "_NONETPASS_PORTAL" not in patch_startup_config(BASE, inside, load_catalog())

@@ -244,8 +244,17 @@ def portal_acl_needed(setup: KeeneticSetup, guest_ip: str) -> bool:
     return ipaddress.IPv4Address(setup.portal) not in ipaddress.IPv4Network(f"{guest_ip}/24", strict=False)
 
 
-def _acl_rule(setup: KeeneticSetup) -> str:
-    return f"permit tcp 0.0.0.0 0.0.0.0 {setup.portal} 255.255.255.255 port eq {setup.portal_port}"
+def _acl_rules(setup: KeeneticSetup) -> list[str]:
+    """Гостям — порт портала на компьютере, остальная домашняя сеть закрыта, интернет открыт.
+
+    Правило в access-list Keenetic отменяет «разрешено по умолчанию»: без последнего
+    permit гости теряют DHCP, DNS и интернет."""
+    home = ipaddress.IPv4Network(f"{setup.portal}/24", strict=False)
+    return [
+        f"permit tcp 0.0.0.0 0.0.0.0 {setup.portal} 255.255.255.255 port eq {setup.portal_port}",
+        f"deny ip 0.0.0.0 0.0.0.0 {home.network_address} {home.netmask}",
+        "permit ip 0.0.0.0 0.0.0.0 0.0.0.0 0.0.0.0",
+    ]
 
 
 def _user_lines(setup: KeeneticSetup) -> list[str]:
@@ -293,9 +302,10 @@ def patch_startup_config(text: str, setup: KeeneticSetup, catalog: GateCatalog) 
             first_if = next(n for n, it in enumerate(items) if it.head.startswith("interface "))
             items.insert(first_if, Item(f"access-list {PORTAL_ACL}", []))
             i = first_if
-        items[i].children, items[i].closed = [_acl_rule(setup)], True
-        for head in (f"interface {bridge}", CHILLI):
-            _merge(items[_find(items, head)], (), [f"ip access-group {PORTAL_ACL} in"])
+        items[i].children, items[i].closed = _acl_rules(setup), True
+        # Гости ходят через Chilli0; на мосту список резал бы DHCP до портала.
+        _merge(items[_find(items, f"interface {bridge}")], (f"ip access-group {PORTAL_ACL}",), [])
+        _merge(items[_find(items, CHILLI)], (), [f"ip access-group {PORTAL_ACL} in"])
 
     if setup.mode == "server":
         i = _find(items, "user nonetpass")
@@ -334,9 +344,12 @@ def cli_commands(setup: KeeneticSetup, catalog: GateCatalog, base: str | None = 
     if setup.mode == "router" and (not base or existing_opkg_disk(parse(base)) is None):
         lines.append(f"opkg disk {setup.usb_label}:/")
     if portal_acl_needed(setup, guest_ip):
+        # Пересоздаём список целиком: порядок правил важен (ошибки «no» — если его ещё нет).
         lines += [
-            f"access-list {PORTAL_ACL} {_acl_rule(setup)}",
-            f"interface {bridge} ip access-group {PORTAL_ACL} in",
+            f"interface {bridge} no ip access-group {PORTAL_ACL} in",
+            f"{CHILLI} no ip access-group {PORTAL_ACL} in",
+            f"no access-list {PORTAL_ACL}",
+            *[f"access-list {PORTAL_ACL} {rule}" for rule in _acl_rules(setup)],
             f"{CHILLI} ip access-group {PORTAL_ACL} in",
         ]
     if setup.mode == "server":

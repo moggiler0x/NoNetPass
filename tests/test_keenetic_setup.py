@@ -94,7 +94,7 @@ async def test_full_setup_from_scratch_installs_captive_portal():
     assert cmds.index("components install chilli") < cmds.index("components commit")
     assert "ip dhcp host nonetpass aa:bb:cc:00:00:50 192.168.1.50" in cmds
     assert "interface Chilli0 chilli radiusnasid Sv1" in cmds
-    assert "interface Bridge1 ip access-group _NONETPASS_PORTAL in" in cmds
+    assert "interface Chilli0 ip access-group _NONETPASS_PORTAL in" in cmds
     assert "user nonetpass password rci-pass-123" in cmds
     assert cmds[-1] == "system configuration save"
     assert env["NONETPASS_ROUTER_USER"] == "nonetpass" and env["NONETPASS_DRIVER"] == "keenetic"
