@@ -170,6 +170,26 @@ class KeeneticDriver(RouterDriver):
         data = resp.json()
         return {"ok": True, "version": data.get("title") or data.get("release"), "model": data.get("model")}
 
+    async def show(self, path: str):
+        """JSON команды show через RCI, например ``show("show/running-config")``."""
+        try:
+            if not self._authed:
+                await self._auth()
+            resp = await self.client.get(f"/rci/{path}")
+            if resp.status_code == 401:
+                self._authed = False
+                await self._auth()
+                resp = await self.client.get(f"/rci/{path}")
+        except httpx.HTTPError as exc:
+            raise DriverError(f"keenetic: {exc}") from exc
+        if resp.status_code != 200:
+            raise DriverError(f"keenetic: RCI {path}: {resp.status_code}")
+        return resp.json()
+
+    async def parse(self, commands: list[str]) -> list:
+        """Выполнить команды CLI через RCI; ошибка любой команды — DriverError."""
+        return await self._parse(commands)
+
     async def lookup_mac(self, client_ip: str) -> str | None:
         try:
             if not self._authed:

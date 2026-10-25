@@ -37,6 +37,7 @@ from .control import RebootRefused
 from .hostcheck import check_catalog
 from .config import update_env_file
 from .keenetic_config import ConfigError, KeeneticSetup, bundle, bundle_zip, nonetpass_env_vars
+from .keenetic_setup import AutoSetup
 from .keenetic_usb import download_installer
 from .models import CloseReason
 from .reports import build_report, parse_period, report_csv
@@ -67,6 +68,17 @@ class BlockIn(BaseModel):
 
 class ConfirmIn(BaseModel):
     confirm: str
+
+
+class KeeneticSetupIn(BaseModel):
+    router_url: str = Field("http://192.168.1.1", pattern=r"^https?://[A-Za-z0-9.:-]+/?$")
+    admin_user: str = "admin"
+    admin_password: str
+    nas_id: str
+    ssid: str = "Guest"
+    wifi_password: str = ""
+    profile: str = "Clientpulse"
+    portal: str = ""  # IP этого компьютера; пусто — определить самому
 
 
 class KeeneticIn(BaseModel):
@@ -402,6 +414,52 @@ def build_admin_router(ctx, auth: AdminAuth, client_ip) -> APIRouter:
         return {"ok": True, "message": result}
 
     # --- конфиг Keenetic ------------------------------------------------------
+
+    setup_job: dict = {}
+
+    @router.post("/keenetic-setup")
+    async def keenetic_setup_start(body: KeeneticSetupIn, actor: str = Depends(admin)):
+        job = setup_job.get("job")
+        if job and not job.done:
+            raise HTTPException(409, "настройка роутера уже идёт")
+        setup = KeeneticSetup(nas_id=body.nas_id, ssid=body.ssid, wifi_password=body.wifi_password,
+                              profile=body.profile, mode="server", portal=body.portal or (local_ip() or ""),
+                              rci_password=secrets.token_urlsafe(12).replace("-", "x").replace("_", "y"))
+        try:
+            setup.validate()
+        except ConfigError as exc:
+            raise HTTPException(422, str(exc))
+        job = AutoSetup(body.router_url, body.admin_user, body.admin_password, setup, ctx.catalog)
+        setup_job["job"] = job
+        journal.audit("keenetic_setup", actor=actor, router=body.router_url, nas_id=body.nas_id)
+
+        async def work():
+            try:
+                env = await job.run()
+            except Exception as exc:  # noqa: BLE001 — показываем любую ошибку в панели
+                journal.audit("keenetic_setup_failed", actor=actor, error=str(exc))
+                if not job.error:
+                    job.error, job.done = f"непредвиденная ошибка: {exc}", True
+                return
+            journal.audit("keenetic_setup_done", actor=actor, router=body.router_url)
+            if ctx.settings.env_file:
+                update_env_file(ctx.settings.env_file, env)
+                asyncio.get_running_loop().call_later(3, ctx.control.exit)
+
+        setup_job["task"] = asyncio.create_task(work())
+        return job.to_dict()
+
+    @router.get("/keenetic-setup")
+    async def keenetic_setup_state(actor: str = Depends(admin)):
+        job = setup_job.get("job")
+        if not job:
+            return {"steps": [], "done": False, "error": ""}
+        state = job.to_dict()
+        state["restart"] = bool(job.env) and bool(ctx.settings.env_file)
+        if job.env and not ctx.settings.env_file:
+            # Без файла настроек NoNetPass не может подключиться сам: показываем, что дописать.
+            state["env"] = job.env
+        return state
 
     @router.get("/keenetic-config")
     async def keenetic_defaults(actor: str = Depends(admin)):
