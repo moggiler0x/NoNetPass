@@ -22,6 +22,7 @@ class FakeKeenetic:
     def __init__(self, captive=False, component="chilli", pc_known=True, os5=False):
         self.captive, self.component, self.pc_known, self.os5 = captive, component, pc_known, os5
         self.commands: list[str] = []
+        self.users = {"admin": "secret"}
         self.down = 0  # сколько проверок роутер «перезагружается»
 
     def __call__(self, request: httpx.Request):
@@ -33,7 +34,8 @@ class FakeKeenetic:
             if request.method == "GET":
                 return httpx.Response(401, headers={"X-NDM-Realm": "Keenetic Air", "X-NDM-Challenge": "C"})
             body = json.loads(request.content)
-            ok = body["password"] == challenge_password("admin", "secret", "Keenetic Air", "C")
+            pw = self.users.get(body["login"])
+            ok = pw is not None and body["password"] == challenge_password(body["login"], pw, "Keenetic Air", "C")
             return httpx.Response(200 if ok else 401)
         if path == "/rci/show/version":
             return httpx.Response(200, json={"model": "Keenetic Air", "title": "4.3.6"})
@@ -46,6 +48,8 @@ class FakeKeenetic:
             return httpx.Response(200, json=rows)
         if path == "/rci/show/running-config":
             return httpx.Response(200, json={"message": BASE.splitlines()})
+        if path == "/rci/user":
+            return httpx.Response(404)
         results = []
         for item in json.loads(request.content):
             cmd = item["parse"]
@@ -57,6 +61,11 @@ class FakeKeenetic:
                 status = [{"status": "error", "message": "unknown command"}]
             if cmd.startswith("interface Chilli0") and not self.captive:
                 status = [{"status": "error", "message": "no such command: Chilli0"}]
+            if cmd.startswith("user nonetpass password "):
+                if self.os5:  # KeeneticOS 5.1 не принимает пароль одной строкой
+                    status = [{"status": "error", "message": "no such command: " + cmd.split()[-1]}]
+                else:
+                    self.users["nonetpass"] = cmd.split()[-1]
             if cmd == "components commit":
                 self.captive, self.down = True, 2
             results.append({"parse": {"status": status, **extra}})
@@ -95,6 +104,9 @@ async def test_setup_on_keeneticos5_lists_components_via_parse():
     await job.run()
     assert [s.state for s in job.steps] == ["ok"] * 5
     assert fake.commands.index("components install captive-portal") < fake.commands.index("components commit")
+    # Пользователь nonetpass не создался: NoNetPass входит под администратором.
+    assert job.admin_fallback and job.env["NONETPASS_ROUTER_USER"] == "admin"
+    assert job.env["NONETPASS_ROUTER_PASSWORD"] == "secret" and "no user nonetpass" in fake.commands
 
 
 async def test_setup_reports_wrong_password_and_missing_pc():

@@ -99,6 +99,7 @@ class AutoSetup:
     error: str = ""
     env: dict[str, str] = field(default_factory=dict)
     _installed: set[str] = field(default_factory=set)
+    admin_fallback: bool = False
 
     def __post_init__(self):
         self.steps = [Step(t) for t in (
@@ -136,7 +137,7 @@ class AutoSetup:
             await self._step(0, self._login(driver), lambda version: version)
             driver = await self._step(1, self._captive(driver), "есть")
             await self._step(2, self._reserve_ip(driver), lambda mac: f"{self.setup.portal} → {mac}")
-            await self._step(3, self._apply(driver), "готово")
+            await self._step(3, self._apply(driver), lambda detail: detail or "готово")
             await self._step(4, driver.parse(["system configuration save"]), "сохранено")
         except (DriverError, ConfigError, SetupError) as exc:
             self.error = str(exc)
@@ -146,6 +147,8 @@ class AutoSetup:
             if driver:
                 await driver.aclose()
         self.env = nonetpass_env_vars(self.setup, self.router_url)
+        if self.admin_fallback:
+            self.env.update({"NONETPASS_ROUTER_USER": self.admin_user, "NONETPASS_ROUTER_PASSWORD": self.admin_password})
         return self.env
 
     async def _login(self, driver: KeeneticDriver) -> str:
@@ -233,9 +236,44 @@ class AutoSetup:
         await driver.parse([f"ip dhcp host nonetpass {mac} {self.setup.portal}"])
         return mac
 
-    async def _apply(self, driver: KeeneticDriver) -> None:
+    async def _apply(self, driver: KeeneticDriver) -> str:
         base = "\n".join(_lines(await driver.show("show/running-config"))) or None
         commands = [c for c in cli_commands(self.setup, self.catalog, base).splitlines()
                     if c and not c.startswith("#") and c != "system configuration save"]
         for cmd in commands:
-            await driver.parse([cmd])
+            if not cmd.startswith("user nonetpass"):
+                await driver.parse([cmd])
+        if self.setup.mode == "server":
+            return await self._ensure_user(driver)
+        return ""
+
+    async def _ensure_user(self, driver: KeeneticDriver) -> str:
+        """Пользователь ``nonetpass`` для RCI; не вышло — NoNetPass ходит под администратором.
+
+        Синтаксис ``user`` разный в разных KeeneticOS (на 5.1 одной строкой не принимается),
+        поэтому пробуем несколько форм и проверяем входом под новым пользователем."""
+        pw = self.setup.rci_password
+        attempts = (
+            lambda: driver.parse(["user nonetpass", f"user nonetpass password {pw}", "user nonetpass tag http"]),
+            lambda: driver.show("user", {"name": "nonetpass", "password": pw, "tag": "http"}),
+            lambda: driver.show("user", {"nonetpass": {"password": pw, "tag": {"http": True}}}),
+        )
+        for attempt in attempts:
+            try:
+                await attempt()
+            except DriverError:
+                continue
+            probe = KeeneticDriver(self.router_url, "nonetpass", pw, acl="", verify_tls=False,
+                                   state_file=None, transport=self.transport)
+            try:
+                if (await probe.check()).get("ok"):
+                    return "готово"
+            finally:
+                await probe.aclose()
+        for cmd in ("no user nonetpass",):
+            try:
+                await driver.parse([cmd])
+            except DriverError:
+                pass
+        self.admin_fallback = True
+        return f"готово; NoNetPass будет входить в роутер под «{self.admin_user}»"

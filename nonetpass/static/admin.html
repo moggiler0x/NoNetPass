@@ -256,7 +256,7 @@
     <section id="keenetic">
       <h2>Настроить роутер автоматически</h2>
       <form class="card grid" id="ks-form" style="grid-template-columns:repeat(auto-fill,minmax(220px,1fr))">
-        <div class="faint" style="grid-column:1/-1">NoNetPass сам зайдёт в роутер, поставит Captive portal, закрепит IP этого компьютера, настроит гостевую сеть ClientPulse и подключится к роутеру. Пароль администратора нигде не сохраняется.</div>
+        <div class="faint" style="grid-column:1/-1">NoNetPass сам зайдёт в роутер, поставит Captive portal, закрепит IP этого компьютера, настроит гостевую сеть ClientPulse и подключится к роутеру. Пароль администратора сохраняется в файл настроек этого компьютера, только если роутер не дал создать отдельного пользователя для NoNetPass.</div>
         <label class="f" style="grid-column:1/-1">RADIUS NAS ID (идентификатор зоны от ClientPulse)<input type="text" id="ks-nas_id" required autocomplete="off"></label>
         <label class="f">Адрес роутера<input type="text" id="ks-router_url" value="http://192.168.1.1"></label>
         <label class="f">Логин администратора<input type="text" id="ks-admin_user" value="admin" autocomplete="off"></label>
