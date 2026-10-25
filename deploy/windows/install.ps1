@@ -84,9 +84,14 @@ Say "Python: $BasePython"
 # --- 2. NoNetPass ------------------------------------------------------------
 Say "Останавливаю NoNetPass, если он запущен"
 Stop-ScheduledTask -TaskName $Task -ErrorAction SilentlyContinue
-Get-Process python, pythonw -ErrorAction SilentlyContinue |
-    Where-Object { $_.Path -and $_.Path.StartsWith($Venv, [StringComparison]::OrdinalIgnoreCase) } |
-    Stop-Process -Force
+# Путь процесса берём из WMI: Get-Process не отдаёт его для чужих процессов.
+try {
+    Get-CimInstance Win32_Process -Filter "Name='python.exe' OR Name='pythonw.exe'" -ErrorAction Stop |
+        Where-Object { "$($_.ExecutablePath)" -like "$Venv\*" } |
+        ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+} catch {
+    Write-Host "Не удалось проверить запущенные процессы: $_"
+}
 
 if (-not (Test-Path $Python)) {
     Say "Создаю окружение $Venv"
