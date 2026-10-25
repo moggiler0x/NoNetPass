@@ -341,7 +341,11 @@ NoNetPass запускается **прямо на роутере** или **н�
 nonetpass router-config mikrotik  > nonetpass.rsc       # списки, walled garden и правила на каждый шлюз
 nonetpass router-config nftables  > /etc/nonetpass/sets.nft
 nonetpass router-config ipset     > /opt/etc/ndm/netfilter.d/50-nonetpass.sh
+nonetpass keenetic-config         # Keenetic + Captive portal ClientPulse: спросит NAS ID, соберёт startup-config
 ```
+
+Генератор конфига Keenetic есть и в админ-панели, вкладка «Keenetic»; подробнее в
+[deploy/keenetic/README.md](deploy/keenetic/README.md#генератор-конфига-captive-portal-clientpulse--nonetpass).
 
 Готовые файлы лежат в [`deploy/`](deploy/):
 [MikroTik `.rsc` и пошаговая инструкция](deploy/mikrotik/README.md),

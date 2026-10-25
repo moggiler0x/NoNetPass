@@ -33,6 +33,7 @@ from pydantic import BaseModel, Field
 
 from .control import RebootRefused
 from .hostcheck import check_catalog
+from .keenetic_config import ConfigError, KeeneticSetup, bundle, bundle_zip
 from .models import CloseReason
 from .reports import build_report, parse_period, report_csv
 
@@ -62,6 +63,18 @@ class BlockIn(BaseModel):
 
 class ConfirmIn(BaseModel):
     confirm: str
+
+
+class KeeneticIn(BaseModel):
+    nas_id: str
+    ssid: str = "Guest"
+    wifi_password: str = ""
+    profile: str = "Clientpulse"
+    mode: str = "router"
+    portal: str = ""
+    rci_password: str = ""
+    router_url: str = "http://192.168.1.1"
+    base: str | None = Field(None, max_length=2_000_000)  # текущий startup-config роутера
 
 
 def token_ok(expected: str | None, authorization: str | None) -> bool:
@@ -370,5 +383,20 @@ def build_admin_router(ctx, auth: AdminAuth, client_ip) -> APIRouter:
             with contextlib.suppress(Exception):
                 await asyncio.wait_for(ctx.bot.broadcast(f"🔄 {result} (из админ-панели)"), 5)
         return {"ok": True, "message": result}
+
+    # --- конфиг Keenetic ------------------------------------------------------
+
+    @router.post("/keenetic-config")
+    async def keenetic_config(body: KeeneticIn, actor: str = Depends(admin)):
+        setup = KeeneticSetup(nas_id=body.nas_id, ssid=body.ssid, wifi_password=body.wifi_password,
+                              profile=body.profile, mode=body.mode, portal=body.portal,
+                              rci_password=body.rci_password)
+        try:
+            files = bundle(setup, ctx.catalog, body.base or None, body.router_url)
+        except ConfigError as exc:
+            raise HTTPException(422, str(exc))
+        journal.audit("keenetic_config", actor=actor, nas_id=body.nas_id, startup_config=bool(body.base))
+        return Response(bundle_zip(files), media_type="application/zip",
+                        headers={"Content-Disposition": 'attachment; filename="nonetpass-keenetic.zip"'})
 
     return router

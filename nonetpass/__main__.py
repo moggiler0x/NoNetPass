@@ -14,8 +14,24 @@ def main() -> None:
     cfg.add_argument("--hotspot-server", default="hotspot1", help="MikroTik: имя сервера Hotspot")
     cfg.add_argument("--hotspot-net", default="192.168.110.0/24", help="MikroTik: сеть Hotspot")
     cfg.add_argument("--portal", default="172.17.0.2:8080", help="MikroTik: адрес и порт NoNetPass")
+    kc = sub.add_parser("keenetic-config", help="собрать конфиг Keenetic: Captive portal ClientPulse + NoNetPass")
+    kc.add_argument("--nas-id", help="RADIUS NAS ID (идентификатор зоны от ClientPulse)")
+    kc.add_argument("--base", help="текущий startup-config роутера; без него будут только команды CLI")
+    kc.add_argument("--ssid", help="имя гостевой сети (по умолчанию Guest)")
+    kc.add_argument("--wifi-password", help="пароль гостевой сети; пусто: открытая сеть")
+    kc.add_argument("--profile", help="профиль Captive portal (по умолчанию Clientpulse)")
+    kc.add_argument("--mode", choices=["router", "server"], help="NoNetPass на роутере (Entware) или на отдельной машине")
+    kc.add_argument("--portal", help="IP NoNetPass (режим server)")
+    kc.add_argument("--rci-password", help="режим server: пароль пользователя nonetpass на роутере")
+    kc.add_argument("--router-url", default="http://192.168.1.1", help="режим server: адрес роутера для RCI")
+    kc.add_argument("--out", default="nonetpass-keenetic", help="каталог для файлов")
     args = parser.parse_args()
     settings = Settings.from_env()
+
+    if args.command == "keenetic-config":
+        from .keenetic_wizard import run
+
+        raise SystemExit(run(args, settings.catalog()))
 
     if args.command == "router-config":
         from .routercfg import GENERATORS, HotspotSetup
