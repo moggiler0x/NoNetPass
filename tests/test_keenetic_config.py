@@ -36,7 +36,11 @@ def test_patch_follows_clientpulse_guide():
     chilli = block(out, "interface Chilli0")
     assert chilli[:4] == ["chilli profile Clientpulse", "chilli radiusnasid Sv12345",
                           "chilli dhcpif Bridge1", "chilli uamallowed 10.1.30.1"]
-    assert "chilli uamdomain id.vk.ru" in chilli and chilli[-1] == "up"
+    # uamdomain ломает портал на KeeneticOS 5.1: старые строки убираются.
+    assert not any("uamdomain" in c for c in chilli) and chilli[-1] == "up"
+    again = patch_startup_config(out.replace("chilli dhcpif Bridge1\n", "chilli dhcpif Bridge1\n    chilli uamdomain id.vk.ru\n"),
+                                 KeeneticSetup(nas_id="Sv12345", ssid="Free WiFi"), load_catalog())
+    assert "uamdomain" not in again
     # Обе гостевые точки доступа: новое имя сети, открытая сеть, включены.
     for ap in ("WifiMaster0/AccessPoint1", "WifiMaster1/AccessPoint1"):
         children = block(out, f"interface {ap}")

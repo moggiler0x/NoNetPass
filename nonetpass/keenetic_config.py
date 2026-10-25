@@ -6,8 +6,8 @@
 
 * портал NoNetPass доступен гостям до входа (``chilli uamallowed``) и по
   имени ``nonetpass.lan`` (``ip host``);
-* страницы входа шлюзов открыты всегда (``chilli uamdomain``), как walled
-  garden у провайдера на MikroTik;
+* ``chilli uamdomain`` не используем: на KeeneticOS 5.1 (Air) с ним портал
+  перестаёт выдавать гостям адреса; страницы входа открываются окнами;
 * окна NoNetPass открывает через RCI командами ``chilli uamallowed`` и сам
   закрывает их; без ``system configuration save``, поэтому перезагрузка
   тоже закрывает окно;
@@ -204,15 +204,6 @@ def guest_segment(items: list[Item]) -> tuple[str, str, str, list[str]]:
 # --- что настраиваем ---------------------------------------------------------
 
 
-def login_domains(catalog: GateCatalog) -> list[str]:
-    """Страницы входа шлюзов верификации: открыты до входа всегда."""
-    out: list[str] = []
-    for gate in catalog.all:
-        if gate.kind == VERIFY:
-            out += [h for h in gate.gateways if h not in out]
-    return out
-
-
 def _ap_lines(setup: KeeneticSetup) -> tuple[tuple[str, ...], list[str]]:
     drop = ("ssid", "authentication wpa-psk", "encryption")
     add = [f"ssid {_quote(setup.ssid)}"]
@@ -227,7 +218,6 @@ def _chilli_lines(setup: KeeneticSetup, catalog: GateCatalog, bridge: str, porta
         f"chilli radiusnasid {setup.nas_id}",
         f"chilli dhcpif {bridge}",
         f"chilli uamallowed {portal}",
-        *[f"chilli uamdomain {d}" for d in login_domains(catalog)],
         "up",
     ]
 
@@ -278,7 +268,8 @@ def patch_startup_config(text: str, setup: KeeneticSetup, catalog: GateCatalog) 
 
     i = _find(items, CHILLI)
     chilli = items[i] if i is not None else Item(CHILLI, [])
-    _merge(chilli, ("chilli profile", "chilli radiusnasid", "chilli dhcpif", f"chilli uamallowed {portal}"),
+    _merge(chilli, ("chilli profile", "chilli radiusnasid", "chilli dhcpif", f"chilli uamallowed {portal}",
+                    "chilli uamdomain"),
            _chilli_lines(setup, catalog, bridge, portal))
     if i is None:
         items.insert(_find(items, f"interface {bridge}") + 1, chilli)
@@ -338,7 +329,7 @@ def cli_commands(setup: KeeneticSetup, catalog: GateCatalog, base: str | None = 
     _, add = _ap_lines(setup)
     for ap in aps:
         lines += [f"interface {ap} {c}" for c in add]
-    lines.append(CHILLI)
+    lines += [CHILLI, f"{CHILLI} no chilli uamdomain"]  # старые версии NoNetPass их ставили
     lines += [f"{CHILLI} {c}" for c in _chilli_lines(setup, catalog, bridge, portal)]
     lines += ["ip nat Chilli0", f"ip host {setup.portal_name} {portal}"]
     if setup.mode == "router" and (not base or existing_opkg_disk(parse(base)) is None):
