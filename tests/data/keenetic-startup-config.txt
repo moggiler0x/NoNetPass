@@ -1,0 +1,81 @@
+! $$$ Model: Keenetic Giga
+! $$$ Version: 2.06.1
+! $$$ Agent: http/rci
+! $$$ Last change: Sat, 24 Oct 2026 10:00:00 GMT
+! $$$ Md5 checksum: 0123456789abcdef0123456789abcdef
+system
+    set net.ipv4.ip_forward 1
+    hostname Keenetic
+    domainname WORKGROUP
+!
+ntp server 0.pool.ntp.org
+access-list _WEBADMIN_GuestWiFi
+    deny tcp 0.0.0.0 0.0.0.0 10.1.30.1 255.255.255.255
+!
+isolate-private
+interface GigabitEthernet0
+    up
+!
+interface WifiMaster0/AccessPoint0
+    name WifiMaster0/AccessPoint0
+    security-level private
+    authentication wpa-psk HomeSecret123
+    encryption enable
+    encryption wpa2
+    ssid Keenetic-5829
+    up
+!
+interface WifiMaster0/AccessPoint1
+    name GuestWiFi
+    security-level protected
+    ssid Guest
+!
+interface WifiMaster1/AccessPoint1
+    name GuestWiFi5
+    security-level protected
+    ssid Guest
+!
+interface Bridge0
+    name Home
+    description "Home network"
+    inherit GigabitEthernet0/Vlan1
+    include WifiMaster0/AccessPoint0
+    security-level private
+    ip address 192.168.1.1 255.255.255.0
+    up
+!
+interface Bridge1
+    name Guest
+    description "Guest network"
+    include WifiMaster0/AccessPoint1
+    include WifiMaster1/AccessPoint1
+    security-level protected
+    ip address 10.1.30.1 255.255.255.0
+    up
+!
+interface GigabitEthernet1
+    rename ISP
+    description "Broadband connection"
+    security-level public
+    ip address dhcp
+    up
+!
+ip dhcp pool _WEBADMIN
+    range 192.168.1.33 192.168.1.152
+    bind Home
+!
+ip dhcp pool _WEBADMIN_GUEST_AP
+    range 10.1.30.33 10.1.30.152
+    bind Guest
+!
+ip nat Home
+ip nat Guest
+user admin
+    password md5 2320924ba6e5c1fec3957e587a21535b
+    tag cli
+    tag http
+!
+service dhcp
+service dns-proxy
+service http
+!

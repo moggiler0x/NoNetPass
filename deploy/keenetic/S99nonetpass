@@ -10,5 +10,7 @@ PATH=/opt/sbin:/opt/bin:/opt/usr/sbin:/opt/usr/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
 export NONETPASS_DRIVER=ipset
 export NONETPASS_LOG_PATH=/opt/var/log/nonetpass-sessions.jsonl
+# Настройки из генератора (nonetpass keenetic-config) перекрывают значения выше.
+if [ -f /opt/etc/nonetpass.env ]; then set -a; . /opt/etc/nonetpass.env; set +a; fi
 
 . /opt/etc/init.d/rc.func

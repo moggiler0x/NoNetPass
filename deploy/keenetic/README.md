@@ -32,3 +32,52 @@ cp S99nonetpass /opt/etc/init.d/ && chmod +x /opt/etc/init.d/S99nonetpass
 KeeneticOS; при необходимости шаблоны команд меняются через
 `NONETPASS_DRIVER_OPT_GRANT_CMD` и `NONETPASS_DRIVER_OPT_REVOKE_CMD`
 (подстановки `{acl}`, `{src}`, `{dst}`).
+
+## Генератор конфига: Captive portal ClientPulse + NoNetPass
+
+Повторяет инструкцию ClientPulse «Настройка авторизации на Keenetic WiFly»
+(гостевая сеть, Captive portal с профилем Clientpulse, RADIUS NAS ID зоны)
+и сразу добавляет настройки NoNetPass. Первым спрашивает NAS ID:
+
+```sh
+nonetpass keenetic-config                 # вопросы по очереди
+nonetpass keenetic-config --nas-id Sv12345 --base startup-config.txt --ssid "Free WiFi"
+```
+
+То же есть в админ-панели, вкладка «Keenetic»: заполнить поля, приложить
+startup-config, скачать архив.
+
+В архиве:
+
+* `startup-config.txt` — текущий конфиг роутера с изменениями. Загружается в
+  «Управление» → «Параметры системы» → «Файлы» → startup-config → «Заменить
+  файл». Файл целиком заменяет настройки роутера, поэтому собирается только из
+  конфига этого же роутера (скачать там же): интернет, пароль администратора и
+  остальное остаются как были. Без исходного конфига готового файла не будет;
+* `keenetic-commands.txt` — те же изменения командами CLI для командной строки
+  веб-интерфейса (`my.keenetic.net/webcli`), конфиг для них не нужен;
+* `nonetpass.env` — настройки NoNetPass под этот роутер;
+* `README.txt` — порядок действий.
+
+Что меняется в конфиге:
+
+* гостевые точки доступа 2,4 и 5 ГГц: имя сети, пароль или открытая сеть,
+  включены;
+* `interface Chilli0`: `chilli profile Clientpulse`, `chilli radiusnasid <NAS ID>`,
+  `chilli dhcpif` гостевого моста, `chilli uamallowed` адреса NoNetPass и
+  `chilli uamdomain` страниц входа шлюзов (id.vk.ru, id.sber.ru, ...). Если
+  Captive portal уже настроен, остальные его параметры сохраняются;
+* `ip nat Chilli0` и `ip host nonetpass.lan <адрес NoNetPass>`;
+* в режиме «отдельная машина» — пользователь `nonetpass` с тегом `http` для RCI.
+
+Окна NoNetPass открывает через RCI командой `interface Chilli0 chilli
+uamallowed <IP узла>` и закрывает `no chilli uamallowed`, без сохранения в
+startup-config. Captive portal пропускает uamallowed для всех гостей, а не для
+одного устройства, поэтому на время окна узлы доставки выбранного шлюза
+открыты всей гостевой сети. Если два устройства одновременно открыли один и
+тот же шлюз, закрытие первого окна закрывает эти узлы и для второго.
+
+Компонент «Captive portal» конфигом не ставится: сначала обновите KeeneticOS
+и установите компонент в «Общих настройках», как в шагах 2-4 инструкции
+ClientPulse. Команды взяты из справочника CLI KeeneticOS 4.x; на живом
+роутере генератор пока не проверялся.

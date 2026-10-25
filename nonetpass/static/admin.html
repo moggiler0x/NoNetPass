@@ -149,6 +149,7 @@
       <button data-tab="hosts">Узлы</button>
       <button data-tab="settings">Настройки</button>
       <button data-tab="system">Система</button>
+      <button data-tab="keenetic">Keenetic</button>
     </nav>
     <button class="icon-btn" id="theme" title="Тема">Тема</button>
     <button class="icon-btn" id="logout">Выйти</button>
@@ -250,6 +251,24 @@
       <h2>Действия администратора</h2>
       <div class="card tbl"><table><thead><tr><th>Время</th><th>Действие</th><th>Кто</th><th>Детали</th></tr></thead><tbody id="audit"></tbody></table></div>
     </section>
+
+    <!-- Keenetic -->
+    <section id="keenetic">
+      <h2>Конфиг Keenetic с Captive portal ClientPulse</h2>
+      <form class="card grid" id="kc-form" style="grid-template-columns:repeat(auto-fill,minmax(220px,1fr))">
+        <label class="f" style="grid-column:1/-1">RADIUS NAS ID (идентификатор зоны от ClientPulse)<input type="text" id="kc-nas_id" required autocomplete="off"></label>
+        <label class="f">Имя гостевой сети<input type="text" id="kc-ssid" value="Guest" maxlength="32"></label>
+        <label class="f">Пароль сети (пусто: открытая)<input type="text" id="kc-wifi_password" autocomplete="off"></label>
+        <label class="f">Профиль Captive portal<input type="text" id="kc-profile" value="Clientpulse"></label>
+        <label class="f">Где работает NoNetPass<select id="kc-mode"><option value="router">На роутере (Entware)</option><option value="server">На отдельной машине</option></select></label>
+        <label class="f">IP NoNetPass<input type="text" id="kc-portal" placeholder="пусто: адрес гостевой сети"></label>
+        <label class="f kc-server" hidden>Адрес роутера<input type="text" id="kc-router_url" value="http://192.168.1.1"></label>
+        <label class="f kc-server" hidden>Пароль пользователя nonetpass на роутере<input type="text" id="kc-rci_password" autocomplete="off"></label>
+        <label class="f" style="grid-column:1/-1">Текущий startup-config роутера («Управление» → «Параметры системы» → «Файлы»)<input type="file" id="kc-base" accept=".txt,text/plain"></label>
+        <div class="row" style="grid-column:1/-1"><button class="btn" type="submit">Скачать конфиг</button>
+          <span class="faint">Без startup-config в архиве будут команды CLI вместо готового файла: файл целиком заменяет настройки роутера, поэтому собирается только из его собственного конфига.</span></div>
+      </form>
+    </section>
   </div>
 </div>
 
@@ -274,7 +293,8 @@ const REASON = { code_entered: "код введён", expired: "истекло",
   shutdown: "остановка", restart: "после рестарта", error: "ошибка" };
 const AUDIT = { admin_login: "вход в панель", admin_login_failed: "неверный вход", reboot_requested: "запрос перезагрузки",
   reboot_sent: "перезагрузка", reboot_failed: "перезагрузка не удалась", block: "блокировка", unblock: "разблокировка",
-  revoke: "окно закрыто", revoke_all: "все окна закрыты", settings: "настройки", telegram_denied: "чужой в боте" };
+  revoke: "окно закрыто", revoke_all: "все окна закрыты", settings: "настройки", telegram_denied: "чужой в боте",
+  keenetic_config: "конфиг Keenetic" };
 let state = null, tick = null;
 
 function toast(text, bad) {
@@ -523,6 +543,24 @@ document.querySelectorAll("#nav button").forEach((b) => b.onclick = () => {
   if (b.dataset.tab === "devices") loadRecent().catch((e) => toast(e.message, true));
   if (b.dataset.tab === "system") loadAudit().catch((e) => toast(e.message, true));
 });
+
+/* ---------- конфиг Keenetic ---------- */
+$("kc-mode").onchange = () => document.querySelectorAll(".kc-server").forEach((el) => el.hidden = $("kc-mode").value !== "server");
+$("kc-form").onsubmit = async (e) => {
+  e.preventDefault();
+  const body = {};
+  for (const k of ["nas_id", "ssid", "wifi_password", "profile", "mode", "portal", "router_url", "rci_password"]) body[k] = $("kc-" + k).value.trim();
+  const file = $("kc-base").files[0];
+  if (file) body.base = await file.text();
+  const r = await fetch("/api/admin/keenetic-config", { method: "POST", credentials: "same-origin",
+    headers: { "Content-Type": "application/json", "X-NoNetPass": "1" }, body: JSON.stringify(body) });
+  if (r.status === 401) return showLogin();
+  if (!r.ok) { const d = await r.json().catch(() => ({})); return toast(typeof d.detail === "string" ? d.detail : "Проверьте поля формы", true); }
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(await r.blob()); a.download = "nonetpass-keenetic.zip"; a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+  toast(file ? "Готово: startup-config.txt и инструкция в архиве" : "Готово: команды CLI и инструкция в архиве");
+};
 
 /* тема: авто → светлая → тёмная */
 const THEMES = ["auto", "light", "dark"];
