@@ -179,17 +179,25 @@ def _merge(item: Item, drop: tuple[str, ...], add: list[str]) -> None:
     item.closed = True
 
 
-def guest_segment(items: list[Item]) -> tuple[str, str, str]:
-    """Имя интерфейса, псевдоним и адрес гостевого сегмента (мост с гостевой точкой доступа)."""
-    for item in items:
-        if item.head.startswith("interface Bridge") and f"include {AP_24}" in item.children:
-            iface = item.head.split()[1]
-            alias = next((c.split(None, 1)[1] for c in item.children if c.startswith("name ")), iface)
-            addr = next((c.split()[2] for c in item.children if c.startswith("ip address ")), DEFAULT_GUEST_IP)
-            return iface, alias, addr
+def guest_segment(items: list[Item]) -> tuple[str, str, str, list[str]]:
+    """Имя интерфейса, псевдоним, адрес и точки доступа гостевого сегмента.
+
+    Гостевой сегмент: мост (кроме домашнего Bridge0) с точкой доступа Wi-Fi.
+    На KeeneticOS 4 это заводской «Guest» с WifiMaster0/AccessPoint1, на моделях
+    без него (Air с KeeneticOS 5) — сегмент, созданный вручную."""
+    bridges = [i for i in items if i.head.startswith("interface Bridge") and i.head.split()[1] != "Bridge0"]
+    bridges.sort(key=lambda i: f"include {AP_24}" not in i.children)
+    for item in bridges:
+        aps = [c.split()[1] for c in item.children if re.match(r"include WifiMaster\d/AccessPoint\d+$", c)]
+        if not aps:
+            continue
+        iface = item.head.split()[1]
+        alias = next((c.split(None, 1)[1] for c in item.children if c.startswith("name ")), iface)
+        addr = next((c.split()[2] for c in item.children if c.startswith("ip address ")), DEFAULT_GUEST_IP)
+        return iface, alias, addr, aps
     raise ConfigError(
-        "в конфиге нет гостевой сети: включите «Гостевую сеть» в веб-интерфейсе "
-        "(«Мои сети и Wi-Fi»), сохраните и скачайте startup-config заново"
+        "на роутере нет гостевой сети: в «Мои сети и Wi-Fi» → «Сегменты» добавьте сегмент "
+        "с беспроводной сетью (например Guest) и запустите мастер снова"
     )
 
 
@@ -250,11 +258,11 @@ def patch_startup_config(text: str, setup: KeeneticSetup, catalog: GateCatalog) 
     items = parse(text)
     if not any(i.head.startswith("! $$$ Model:") for i in items) or _find(items, "system") is None:
         raise ConfigError("не похоже на startup-config Keenetic: нет заголовка «! $$$ Model» или блока system")
-    bridge, _, guest_ip = guest_segment(items)
+    bridge, _, guest_ip, aps = guest_segment(items)
     portal = setup.portal or guest_ip
 
     drop, add = _ap_lines(setup)
-    for ap in (AP_24, AP_5):  # 5 ГГц есть не у всех моделей
+    for ap in aps:
         i = _find(items, f"interface {ap}")
         if i is not None:
             _merge(items[i], drop, add)
@@ -307,9 +315,9 @@ def cli_commands(setup: KeeneticSetup, catalog: GateCatalog, base: str | None = 
     """Те же изменения командами CLI: для командной строки веб-интерфейса или RCI."""
     setup.validate()
     if base:
-        bridge, _, guest_ip = guest_segment(parse(base))
+        bridge, _, guest_ip, aps = guest_segment(parse(base))
     else:
-        bridge, guest_ip = DEFAULT_BRIDGE, DEFAULT_GUEST_IP
+        bridge, guest_ip, aps = DEFAULT_BRIDGE, DEFAULT_GUEST_IP, [AP_24, AP_5]
     portal = setup.portal or guest_ip
     lines = [
         f"# NoNetPass + Captive portal {setup.profile}, NAS ID {setup.nas_id}.",
@@ -318,7 +326,7 @@ def cli_commands(setup: KeeneticSetup, catalog: GateCatalog, base: str | None = 
         f"# Гостевой сегмент: {bridge}, адрес {guest_ip}.",
     ]
     _, add = _ap_lines(setup)
-    for ap in (AP_24, AP_5):
+    for ap in aps:
         lines += [f"interface {ap} {c}" for c in add]
     lines.append(CHILLI)
     lines += [f"{CHILLI} {c}" for c in _chilli_lines(setup, catalog, bridge, portal)]

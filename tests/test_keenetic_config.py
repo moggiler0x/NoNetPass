@@ -103,9 +103,20 @@ def test_rejects_foreign_or_guestless_config():
     setup = KeeneticSetup(nas_id="Sv1")
     with pytest.raises(ConfigError, match="startup-config"):
         patch_startup_config("/ip hotspot\nadd name=x\n", setup, load_catalog())
-    guestless = BASE.replace("    include WifiMaster0/AccessPoint1\n", "")
+    guestless = BASE.replace("    include WifiMaster0/AccessPoint1\n", "").replace("    include WifiMaster1/AccessPoint1\n", "")
     with pytest.raises(ConfigError, match="гостевой сети"):
         patch_startup_config(guestless, setup, load_catalog())
+
+
+def test_finds_guest_segment_created_by_hand():
+    # Air с KeeneticOS 5: заводского Guest нет, сегмент добавлен вручную.
+    custom = (BASE.replace("interface Bridge1\n", "interface Bridge2\n")
+              .replace("WifiMaster0/AccessPoint1", "WifiMaster0/AccessPoint2")
+              .replace("    include WifiMaster1/AccessPoint1\n", ""))
+    out = cli_commands(KeeneticSetup(nas_id="Sv1"), load_catalog(), custom)
+    assert "interface Chilli0 chilli dhcpif Bridge2" in out
+    assert "interface WifiMaster0/AccessPoint2 ssid Guest" in out
+    assert "WifiMaster1/AccessPoint1" not in out
 
 
 def test_commands_without_config():
