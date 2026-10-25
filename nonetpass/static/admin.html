@@ -254,7 +254,20 @@
 
     <!-- Keenetic -->
     <section id="keenetic">
-      <h2>Конфиг Keenetic с Captive portal ClientPulse</h2>
+      <h2>Настроить роутер автоматически</h2>
+      <form class="card grid" id="ks-form" style="grid-template-columns:repeat(auto-fill,minmax(220px,1fr))">
+        <div class="faint" style="grid-column:1/-1">NoNetPass сам зайдёт в роутер, поставит Captive portal, закрепит IP этого компьютера, настроит гостевую сеть ClientPulse и подключится к роутеру. Пароль администратора нигде не сохраняется.</div>
+        <label class="f" style="grid-column:1/-1">RADIUS NAS ID (идентификатор зоны от ClientPulse)<input type="text" id="ks-nas_id" required autocomplete="off"></label>
+        <label class="f">Адрес роутера<input type="text" id="ks-router_url" value="http://192.168.1.1"></label>
+        <label class="f">Логин администратора<input type="text" id="ks-admin_user" value="admin" autocomplete="off"></label>
+        <label class="f">Пароль администратора<input type="password" id="ks-admin_password" required autocomplete="off"></label>
+        <label class="f">Имя гостевой сети<input type="text" id="ks-ssid" value="Guest" maxlength="32"></label>
+        <label class="f">Пароль сети (пусто: открытая)<input type="text" id="ks-wifi_password" autocomplete="off"></label>
+        <label class="f">IP этого компьютера<input type="text" id="ks-portal"></label>
+        <div class="row" style="grid-column:1/-1"><button class="btn" type="submit" id="ks-go">Настроить роутер</button></div>
+        <div id="ks-steps" style="grid-column:1/-1"></div>
+      </form>
+      <h2>Или скачать конфиг и загрузить вручную</h2>
       <form class="card grid" id="kc-form" style="grid-template-columns:repeat(auto-fill,minmax(220px,1fr))">
         <label class="f" style="grid-column:1/-1">RADIUS NAS ID (идентификатор зоны от ClientPulse)<input type="text" id="kc-nas_id" required autocomplete="off"></label>
         <label class="f">Имя гостевой сети<input type="text" id="kc-ssid" value="Guest" maxlength="32"></label>
@@ -314,7 +327,7 @@ async function api(path, opts = {}) {
     body: opts.body ? JSON.stringify(opts.body) : undefined, credentials: "same-origin" });
   if (r.status === 401) { showLogin(); throw new Error("нужен вход"); }
   const data = r.headers.get("content-type")?.includes("json") ? await r.json() : await r.text();
-  if (!r.ok) throw new Error(data.detail || r.statusText);
+  if (!r.ok) throw new Error(typeof data.detail === "string" ? data.detail : data.detail?.[0]?.msg || r.statusText);
   return data;
 }
 function confirmBox(title, text, yes = "Да") {
@@ -558,8 +571,34 @@ function kcMode() {
   }
 }
 $("kc-mode").onchange = kcMode;
+const STEP_ICON = { wait: "○", run: "…", ok: "✓", fail: "✕" };
+function renderSetup(st) {
+  $("ks-steps").innerHTML = st.steps.map((x) => `<div class="check" style="margin:6px 0"><span class="dot ${x.state === "ok" ? "ok" : x.state === "fail" ? "fail" : x.state === "run" ? "warn" : ""}"></span>
+    <div><div class="t">${STEP_ICON[x.state]} ${esc(x.title)}</div><div class="d">${esc(x.detail)}</div></div></div>`).join("")
+    + (st.error && !st.steps.some((x) => x.state === "fail") ? `<div class="err">${esc(st.error)}</div>` : "")
+    + (st.done && !st.error ? `<div style="color:var(--ok);margin-top:8px">Готово. ${st.restart ? "NoNetPass подключён к роутеру и перезапускается." : ""}</div>` : "")
+    + (st.env ? `<div class="faint" style="margin-top:8px">Допишите в nonetpass.env и перезапустите NoNetPass:</div><pre class="mono">${esc(Object.entries(st.env).map(([k, v]) => `${k}="${v}"`).join("\n"))}</pre>` : "");
+}
+async function pollSetup() {
+  let st;
+  try { st = await api("/api/admin/keenetic-setup"); } catch { setTimeout(pollSetup, 4000); return; }
+  renderSetup(st);
+  if (!st.done) return setTimeout(pollSetup, 2000);
+  $("ks-go").disabled = false;
+}
+$("ks-form").onsubmit = async (e) => {
+  e.preventDefault();
+  const body = {};
+  for (const k of ["nas_id", "router_url", "admin_user", "admin_password", "ssid", "wifi_password", "portal"]) body[k] = $("ks-" + k).value.trim();
+  $("ks-go").disabled = true;
+  try { renderSetup(await api("/api/admin/keenetic-setup", { method: "POST", body })); $("ks-admin_password").value = ""; pollSetup(); }
+  catch (err) { $("ks-go").disabled = false; toast(err.message, true); }
+};
 async function loadKeenetic() {
   try { kcDefaults = await api("/api/admin/keenetic-config"); } catch { return; }
+  if (!$("ks-portal").value) $("ks-portal").value = kcDefaults.portal;
+  $("ks-router_url").value = kcDefaults.router_url;
+  api("/api/admin/keenetic-setup").then((st) => { if (st.steps.length) { renderSetup(st); if (!st.done) { $("ks-go").disabled = true; pollSetup(); } } }).catch(() => {});
   if (!$("kc-portal").value) $("kc-portal").value = kcDefaults.mode === "server" ? kcDefaults.portal : "";
   $("kc-router_url").value = kcDefaults.router_url;
   $("kc-mode").value = kcDefaults.mode;
