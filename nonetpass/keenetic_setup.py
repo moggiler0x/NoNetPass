@@ -29,6 +29,7 @@ from .gates import GateCatalog
 from .keenetic_config import ConfigError, KeeneticSetup, cli_commands, nonetpass_env_vars
 
 CAPTIVE_COMPONENT = re.compile(r"chilli|captive", re.I)
+CAPTIVE_NAMES = ("chilli", "captive-portal", "captive_portal")
 
 
 class SetupError(RuntimeError):
@@ -65,18 +66,21 @@ def _lines(obj) -> list[str]:
     return []
 
 
-def _components(obj) -> list[dict]:
+def _component_names(obj) -> list[str]:
+    """Имена компонентов из ответа ``components list`` (формат зависит от версии KeeneticOS)."""
+    names: list[str] = []
     if isinstance(obj, dict):
         comp = obj.get("component")
-        if isinstance(comp, list):
-            return [c for c in comp if isinstance(c, dict)]
-        if isinstance(comp, dict):
-            return [comp]
+        if isinstance(comp, dict) and "name" not in comp:
+            names += [k for k, v in comp.items() if isinstance(v, dict)]
+        if isinstance(obj.get("name"), str):
+            names.append(obj["name"])
         for value in obj.values():
-            found = _components(value)
-            if found:
-                return found
-    return []
+            names += _component_names(value)
+    elif isinstance(obj, list):
+        for value in obj:
+            names += _component_names(value)
+    return list(dict.fromkeys(names))
 
 
 @dataclass
@@ -94,6 +98,7 @@ class AutoSetup:
     done: bool = False
     error: str = ""
     env: dict[str, str] = field(default_factory=dict)
+    _installed: set[str] = field(default_factory=set)
 
     def __post_init__(self):
         self.steps = [Step(t) for t in (
@@ -156,17 +161,53 @@ class AutoSetup:
             return driver
         except DriverError:
             pass
-        comps = _components(await driver.show("components/list"))
-        name = next((c["name"] for c in comps if CAPTIVE_COMPONENT.search(str(c.get("name", "")))), None)
-        if not name:
+        names = await self._list_components(driver)
+        name = next((n for n in names if CAPTIVE_COMPONENT.search(n)), None)
+        if not name and names:
             raise SetupError("не нашёл компонент Captive portal: установите его вручную в «Общих настройках» "
-                             "→ «Изменить набор компонентов» и запустите мастер снова")
+                             "→ «Изменить набор компонентов» и запустите мастер снова "
+                             f"(компоненты роутера: {', '.join(names[:40])})")
+        if not name:
+            # Список компонентов не прочитался: пробуем известные имена.
+            name = await self._try_install(driver)
+            if not name:
+                raise SetupError("не удалось поставить компонент Captive portal автоматически: установите его "
+                                 "вручную в «Общих настройках» → «Изменить набор компонентов» и запустите "
+                                 "мастер снова")
         self.steps[1].detail = f"ставлю «{name}», роутер обновится и перезагрузится (до 15 минут)"
-        await driver.parse([f"components install {name}", "components commit"])
+        if name not in self._installed:
+            await driver.parse([f"components install {name}"])
+        await driver.parse(["components commit"])
         await driver.aclose()
         driver = await self._wait_back()
         await driver.parse(["interface Chilli0"])
         return driver
+
+    async def _list_components(self, driver: KeeneticDriver) -> list[str]:
+        """``components list`` — разные KeeneticOS отдают его по-разному, пробуем все пути."""
+        attempts = (
+            lambda: driver.parse(["components list"]),
+            lambda: driver.show("components/list", {}),
+            lambda: driver.show("components/list"),
+        )
+        for attempt in attempts:
+            try:
+                names = [n for n in _component_names(await attempt()) if n != "components list"]
+            except DriverError:
+                continue
+            if names:
+                return names
+        return []
+
+    async def _try_install(self, driver: KeeneticDriver) -> str | None:
+        for name in CAPTIVE_NAMES:
+            try:
+                await driver.parse([f"components install {name}"])
+            except DriverError:
+                continue
+            self._installed.add(name)
+            return name
+        return None
 
     async def _wait_back(self) -> KeeneticDriver:
         deadline = time.monotonic() + self.reboot_timeout

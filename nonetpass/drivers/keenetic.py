@@ -170,16 +170,25 @@ class KeeneticDriver(RouterDriver):
         data = resp.json()
         return {"ok": True, "version": data.get("title") or data.get("release"), "model": data.get("model")}
 
-    async def show(self, path: str):
-        """JSON команды show через RCI, например ``show("show/running-config")``."""
+    async def show(self, path: str, body: dict | None = None):
+        """JSON команды через RCI, например ``show("show/running-config")``.
+
+        С ``body`` запрос идёт POST: так RCI выполняет команды не из ``show``
+        (``show("components/list", {})``)."""
+
+        async def call():
+            if body is None:
+                return await self.client.get(f"/rci/{path}")
+            return await self.client.post(f"/rci/{path}", json=body)
+
         try:
             if not self._authed:
                 await self._auth()
-            resp = await self.client.get(f"/rci/{path}")
+            resp = await call()
             if resp.status_code == 401:
                 self._authed = False
                 await self._auth()
-                resp = await self.client.get(f"/rci/{path}")
+                resp = await call()
         except httpx.HTTPError as exc:
             raise DriverError(f"keenetic: {exc}") from exc
         if resp.status_code != 200:

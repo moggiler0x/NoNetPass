@@ -19,8 +19,8 @@ PC = "192.168.1.50"
 class FakeKeenetic:
     """RCI роутера: вход по challenge, show-команды и parse; Captive portal ставится компонентом."""
 
-    def __init__(self, captive=False, component="chilli", pc_known=True):
-        self.captive, self.component, self.pc_known = captive, component, pc_known
+    def __init__(self, captive=False, component="chilli", pc_known=True, os5=False):
+        self.captive, self.component, self.pc_known, self.os5 = captive, component, pc_known, os5
         self.commands: list[str] = []
         self.down = 0  # сколько проверок роутер «перезагружается»
 
@@ -37,11 +37,10 @@ class FakeKeenetic:
             return httpx.Response(200 if ok else 401)
         if path == "/rci/show/version":
             return httpx.Response(200, json={"model": "Keenetic Air", "title": "4.3.6"})
+        comps = [{"name": "base", "installed": "4.3.6"}] + ([{"name": self.component}] if self.component else [])
         if path == "/rci/components/list":
-            comps = [{"name": "base", "installed": "4.3.6"}]
-            if self.component:
-                comps.append({"name": self.component})
-            return httpx.Response(200, json={"component": comps})
+            # KeeneticOS 5 не отдаёт components list через GET.
+            return httpx.Response(404) if self.os5 else httpx.Response(200, json={"component": comps})
         if path == "/rci/show/ip/arp":
             rows = [{"ip": PC, "mac": "AA:BB:CC:00:00:50"}] if self.pc_known else []
             return httpx.Response(200, json=rows)
@@ -51,12 +50,16 @@ class FakeKeenetic:
         for item in json.loads(request.content):
             cmd = item["parse"]
             self.commands.append(cmd)
-            status = []
+            status, extra = [], {}
+            if cmd == "components list" and self.os5:
+                extra = {"component": comps}
+            elif cmd == "components list":
+                status = [{"status": "error", "message": "unknown command"}]
             if cmd.startswith("interface Chilli0") and not self.captive:
                 status = [{"status": "error", "message": "no such command: Chilli0"}]
             if cmd == "components commit":
                 self.captive, self.down = True, 2
-            results.append({"parse": {"status": status}})
+            results.append({"parse": {"status": status, **extra}})
         return httpx.Response(200, json=results)
 
 
@@ -86,6 +89,14 @@ async def test_full_setup_from_scratch_installs_captive_portal():
     assert env["NONETPASS_ROUTER_USER"] == "nonetpass" and env["NONETPASS_DRIVER"] == "keenetic"
 
 
+async def test_setup_on_keeneticos5_lists_components_via_parse():
+    fake = FakeKeenetic(captive=False, os5=True, component="captive-portal")
+    job = make_job(fake)
+    await job.run()
+    assert [s.state for s in job.steps] == ["ok"] * 5
+    assert fake.commands.index("components install captive-portal") < fake.commands.index("components commit")
+
+
 async def test_setup_reports_wrong_password_and_missing_pc():
     job = make_job(FakeKeenetic(captive=True), password="wrong")
     with pytest.raises(SetupError, match="неверный пароль"):
@@ -99,7 +110,7 @@ async def test_setup_reports_wrong_password_and_missing_pc():
 
 async def test_setup_without_captive_component_asks_for_manual_install():
     job = make_job(FakeKeenetic(captive=False, component=None))
-    with pytest.raises(SetupError, match="вручную"):
+    with pytest.raises(SetupError, match="вручную.*base"):
         await job.run()
 
 
