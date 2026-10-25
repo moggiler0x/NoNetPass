@@ -29,6 +29,7 @@ from .gates import GateCatalog
 from .keenetic_config import ConfigError, KeeneticSetup, cli_commands, nonetpass_env_vars
 
 CAPTIVE_COMPONENT = re.compile(r"chilli|captive", re.I)
+ALREADY = re.compile(r"duplicate|already", re.I)
 CAPTIVE_NAMES = ("chilli", "captive-portal", "captive_portal")
 
 
@@ -241,8 +242,14 @@ class AutoSetup:
         commands = [c for c in cli_commands(self.setup, self.catalog, base).splitlines()
                     if c and not c.startswith("#") and c != "system configuration save"]
         for cmd in commands:
-            if not cmd.startswith("user nonetpass"):
+            if cmd.startswith("user nonetpass"):
+                continue
+            try:
                 await driver.parse([cmd])
+            except DriverError as exc:
+                # Повторный запуск: правило или настройка уже есть — это не ошибка.
+                if not ALREADY.search(str(exc)):
+                    raise
         if self.setup.mode == "server":
             return await self._ensure_user(driver)
         return ""

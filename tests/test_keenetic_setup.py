@@ -61,6 +61,8 @@ class FakeKeenetic:
                 status = [{"status": "error", "message": "unknown command"}]
             if cmd.startswith("interface Chilli0") and not self.captive:
                 status = [{"status": "error", "message": "no such command: Chilli0"}]
+            if cmd.startswith("access-list ") and cmd in self.commands[:-1]:
+                status = [{"status": "error", "message": "a duplicate was found for the rule being set"}]
             if cmd.startswith("user nonetpass password "):
                 if self.os5:  # KeeneticOS 5.1 не принимает пароль одной строкой
                     status = [{"status": "error", "message": "no such command: " + cmd.split()[-1]}]
@@ -107,6 +109,14 @@ async def test_setup_on_keeneticos5_lists_components_via_parse():
     # Пользователь nonetpass не создался: NoNetPass входит под администратором.
     assert job.admin_fallback and job.env["NONETPASS_ROUTER_USER"] == "admin"
     assert job.env["NONETPASS_ROUTER_PASSWORD"] == "secret" and "no user nonetpass" in fake.commands
+
+
+async def test_setup_runs_again_over_its_own_settings():
+    fake = FakeKeenetic(captive=True)
+    await make_job(fake).run()
+    job = make_job(fake)
+    await job.run()
+    assert [s.state for s in job.steps] == ["ok"] * 5
 
 
 async def test_setup_reports_wrong_password_and_missing_pc():
