@@ -21,6 +21,9 @@ param(
 
 $ErrorActionPreference = "Stop"
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+# winget и pip пишут в UTF-8; без этого их вывод в консоли превращается в кракозябры.
+[Console]::OutputEncoding = [Text.Encoding]::UTF8
+$env:PYTHONIOENCODING = "utf-8"
 $Root = Join-Path $env:ProgramData "NoNetPass"
 $Venv = Join-Path $Root "venv"
 $Python = Join-Path $Venv "Scripts\python.exe"
