@@ -53,6 +53,7 @@ DEFAULT_BRIDGE = "Bridge1"
 DEFAULT_GUEST_IP = "10.1.30.1"  # адрес гостевого сегмента Keenetic по умолчанию
 LOCAL_RCI = "http://127.0.0.1:79"
 
+PORTAL_ACL = "_NONETPASS_PORTAL"
 GRANT_CMD = "interface Chilli0 chilli uamallowed {dst}"
 REVOKE_CMD = "interface Chilli0 no chilli uamallowed {dst}"
 
@@ -167,13 +168,14 @@ def _find(items: list[Item], head: str) -> int | None:
 
 
 def _merge(item: Item, drop: tuple[str, ...], add: list[str]) -> None:
-    """Убрать вложенные команды с префиксами из drop и дописать add (``up`` — последней)."""
+    """Убрать вложенные команды с префиксами из drop и дописать add (``up`` остаётся последней)."""
 
     def dropped(child: str) -> bool:
         return child == "up" or child in add or any(child == p or child.startswith(p + " ") for p in drop)
 
+    up = "up" in add or "up" in item.children  # «up» включает интерфейс: оставляем последней строкой
     keep = [c for c in item.children if not dropped(c)]
-    item.children = keep + [c for c in add if c != "up"] + (["up"] if "up" in add else [])
+    item.children = keep + [c for c in add if c != "up"] + (["up"] if up else [])
     item.closed = True
 
 
@@ -227,6 +229,17 @@ def existing_opkg_disk(items: list[Item]) -> str | None:
     return next((it.head.split(None, 2)[2] for it in items if it.head.startswith("opkg disk ")), None)
 
 
+def portal_acl_needed(setup: KeeneticSetup, guest_ip: str) -> bool:
+    """NoNetPass вне гостевой сети: гостям нужен разрешающий доступ к порталу."""
+    if setup.mode != "server":
+        return False
+    return ipaddress.IPv4Address(setup.portal) not in ipaddress.IPv4Network(f"{guest_ip}/24", strict=False)
+
+
+def _acl_rule(setup: KeeneticSetup) -> str:
+    return f"permit tcp 0.0.0.0 0.0.0.0 {setup.portal} 255.255.255.255 port eq {setup.portal_port}"
+
+
 def _user_lines(setup: KeeneticSetup) -> list[str]:
     return [f"password {setup.rci_password}", "tag http"]
 
@@ -265,6 +278,17 @@ def patch_startup_config(text: str, setup: KeeneticSetup, catalog: GateCatalog) 
     if setup.mode == "router" and existing_opkg_disk(items) is None:
         items.insert(at + 1, Item(f"opkg disk {setup.usb_label}:/", []))
 
+    # Гостевой сегмент (protected) не ходит в домашнюю сеть: разрешаем порт портала.
+    if portal_acl_needed(setup, guest_ip):
+        i = _find(items, f"access-list {PORTAL_ACL}")
+        if i is None:
+            first_if = next(n for n, it in enumerate(items) if it.head.startswith("interface "))
+            items.insert(first_if, Item(f"access-list {PORTAL_ACL}", []))
+            i = first_if
+        items[i].children, items[i].closed = [_acl_rule(setup)], True
+        for head in (f"interface {bridge}", CHILLI):
+            _merge(items[_find(items, head)], (), [f"ip access-group {PORTAL_ACL} in"])
+
     if setup.mode == "server":
         i = _find(items, "user nonetpass")
         if i is None:
@@ -301,6 +325,12 @@ def cli_commands(setup: KeeneticSetup, catalog: GateCatalog, base: str | None = 
     lines += ["ip nat Chilli0", f"ip host {setup.portal_name} {portal}"]
     if setup.mode == "router" and (not base or existing_opkg_disk(parse(base)) is None):
         lines.append(f"opkg disk {setup.usb_label}:/")
+    if portal_acl_needed(setup, guest_ip):
+        lines += [
+            f"access-list {PORTAL_ACL} {_acl_rule(setup)}",
+            f"interface {bridge} ip access-group {PORTAL_ACL} in",
+            f"{CHILLI} ip access-group {PORTAL_ACL} in",
+        ]
     if setup.mode == "server":
         lines.append("user nonetpass")
         lines += [f"user nonetpass {c}" for c in _user_lines(setup)]
@@ -308,21 +338,26 @@ def cli_commands(setup: KeeneticSetup, catalog: GateCatalog, base: str | None = 
     return "\n".join(lines) + "\n"
 
 
-def nonetpass_env(setup: KeeneticSetup, router_url: str = "http://192.168.1.1") -> str:
-    lines = [
-        "# Настройки NoNetPass для Keenetic с Captive portal (дописать в nonetpass.env).",
-        "NONETPASS_DRIVER=keenetic",
-        f'NONETPASS_DRIVER_OPT_GRANT_CMD="{GRANT_CMD}"',
-        f'NONETPASS_DRIVER_OPT_REVOKE_CMD="{REVOKE_CMD}"',
-    ]
+def nonetpass_env_vars(setup: KeeneticSetup, router_url: str = "http://192.168.1.1") -> dict[str, str]:
+    env = {
+        "NONETPASS_DRIVER": "keenetic",
+        "NONETPASS_DRIVER_OPT_GRANT_CMD": GRANT_CMD,
+        "NONETPASS_DRIVER_OPT_REVOKE_CMD": REVOKE_CMD,
+    }
     if setup.mode == "router":
-        lines += ["# NoNetPass на роутере: локальный RCI без пароля.", f"NONETPASS_ROUTER_URL={LOCAL_RCI}"]
+        env["NONETPASS_ROUTER_URL"] = LOCAL_RCI  # NoNetPass на роутере: локальный RCI без пароля
     else:
-        lines += [
-            f"NONETPASS_ROUTER_URL={router_url}",
-            "NONETPASS_ROUTER_USER=nonetpass",
-            f"NONETPASS_ROUTER_PASSWORD={setup.rci_password}",
-        ]
+        env.update({
+            "NONETPASS_ROUTER_URL": router_url,
+            "NONETPASS_ROUTER_USER": "nonetpass",
+            "NONETPASS_ROUTER_PASSWORD": setup.rci_password,
+        })
+    return env
+
+
+def nonetpass_env(setup: KeeneticSetup, router_url: str = "http://192.168.1.1") -> str:
+    lines = ["# Настройки NoNetPass для Keenetic с Captive portal (дописать в nonetpass.env)."]
+    lines += [f'{k}="{v}"' if " " in v else f"{k}={v}" for k, v in nonetpass_env_vars(setup, router_url).items()]
     return "\n".join(lines) + "\n"
 
 
@@ -374,8 +409,10 @@ def readme(setup: KeeneticSetup, has_config: bool, pin: str = "", opkg_disk: str
         )
     else:
         steps.append(
-            "NoNetPass на отдельной машине: sudo ./install.sh, затем допишите nonetpass.env\n"
-            "   в /etc/nonetpass.env и перезапустите службу nonetpass."
+            f"NoNetPass на компьютере {setup.portal}: Windows — deploy/windows/install.cmd,\n"
+            "   Linux — sudo ./install.sh. Настройки роутера из nonetpass.env допишите в его\n"
+            "   nonetpass.env (галка «Сразу подключить» во вкладке «Keenetic» делает это сама)\n"
+            "   и закрепите за компьютером постоянный IP в роутере."
         )
     steps.append(
         f"Подключитесь к сети «{setup.ssid}»: должна открыться страница ClientPulse,\n"

@@ -216,3 +216,69 @@ def test_usb_scripts_are_valid_sh(tmp_path):
     script = tmp_path / "setup.sh"
     script.write_text(setup_script())
     assert subprocess.run(["sh", "-n", str(script)], check=False).returncode == 0
+
+
+def test_server_mode_lets_guests_reach_portal_pc():
+    setup = KeeneticSetup(nas_id="Sv1", mode="server", portal="192.168.1.50", rci_password="rci-pass-123")
+    out = patch_startup_config(BASE, setup, load_catalog())
+    assert block(out, "access-list _NONETPASS_PORTAL") == [
+        "permit tcp 0.0.0.0 0.0.0.0 192.168.1.50 255.255.255.255 port eq 8080"]
+    bridge, chilli = block(out, "interface Bridge1"), block(out, "interface Chilli0")
+    assert bridge[-2:] == ["ip access-group _NONETPASS_PORTAL in", "up"]  # мост остаётся включённым
+    assert "ip access-group _NONETPASS_PORTAL in" in chilli
+    heads = [i.head for i in parse(out)]
+    assert heads.index("access-list _NONETPASS_PORTAL") < heads.index("interface Bridge1")
+    assert patch_startup_config(out, setup, load_catalog()) == out
+    cmds = cli_commands(setup, load_catalog(), BASE)
+    assert "interface Bridge1 ip access-group _NONETPASS_PORTAL in" in cmds
+    # Компьютер в гостевой сети: правило не нужно.
+    inside = KeeneticSetup(nas_id="Sv1", mode="server", portal="10.1.30.10", rci_password="rci-pass-123")
+    assert "_NONETPASS_PORTAL" not in patch_startup_config(BASE, inside, load_catalog())
+
+
+def test_env_file_read_and_update(tmp_path):
+    from nonetpass.config import read_env_file, update_env_file
+
+    path = tmp_path / "nonetpass.env"
+    path.write_text("﻿# комментарий\nNONETPASS_DRIVER=mock\nNONETPASS_ADMIN_PIN=123456\n"
+                    "NONETPASS_HOST_REBOOT_CMD=shutdown /r /t 5\n", encoding="utf-8")
+    update_env_file(str(path), {"NONETPASS_DRIVER": "keenetic",
+                                "NONETPASS_DRIVER_OPT_GRANT_CMD": "interface Chilli0 chilli uamallowed {dst}"})
+    env = read_env_file(str(path))
+    assert env["NONETPASS_DRIVER"] == "keenetic" and env["NONETPASS_ADMIN_PIN"] == "123456"
+    assert env["NONETPASS_HOST_REBOOT_CMD"] == "shutdown /r /t 5"
+    assert env["NONETPASS_DRIVER_OPT_GRANT_CMD"] == "interface Chilli0 chilli uamallowed {dst}"
+    assert "# комментарий" in path.read_text(encoding="utf-8")
+
+
+def test_admin_applies_router_settings_to_env_file(tmp_path):
+    env_file = tmp_path / "nonetpass.env"
+    env_file.write_text("NONETPASS_DRIVER=mock\nNONETPASS_ADMIN_PIN=2468\n")
+    client, _, ctx = make_client(tmp_path, env_file=str(env_file))
+    exits = []
+    ctx.control.exit = lambda: exits.append(1)
+    with client:
+        login(client)
+        defaults = client.get("/api/admin/keenetic-config").json()
+        assert defaults["can_apply"] is True and defaults["mode"] == "server"
+        body = {"nas_id": "Sv1", "mode": "server", "portal": "192.168.1.50", "rci_password": "rci-pass-123",
+                "router_url": "http://192.168.1.1", "base": BASE, "apply": True}
+        r = client.post("/api/admin/keenetic-config", json=body, headers=PANEL)
+        assert r.status_code == 200 and r.headers["x-nonetpass-applied"] == "1"
+        bad = client.post("/api/admin/keenetic-config", headers=PANEL,
+                          json={**body, "router_url": "http://x\nNONETPASS_ADMIN_PIN=0"})
+        assert bad.status_code == 422
+    from nonetpass.config import read_env_file
+
+    env = read_env_file(str(env_file))
+    assert env["NONETPASS_DRIVER"] == "keenetic" and env["NONETPASS_ROUTER_USER"] == "nonetpass"
+    assert env["NONETPASS_ROUTER_PASSWORD"] == "rci-pass-123" and env["NONETPASS_ADMIN_PIN"] == "2468"
+
+
+def test_windows_installer_files():
+    win = Path(__file__).parent.parent / "deploy" / "windows"
+    ps1 = (win / "install.ps1").read_bytes()
+    assert ps1.startswith(b"\xef\xbb\xbf")  # BOM: иначе Windows PowerShell 5.1 прочтёт кириллицу как ANSI
+    text = ps1.decode("utf-8-sig")
+    assert "--env-file" in text and "Register-ScheduledTask" in text and "PYTHONUTF8" in text
+    (win / "install.cmd").read_bytes().decode("ascii")  # cmd.exe: только ASCII
