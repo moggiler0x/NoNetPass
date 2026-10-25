@@ -37,16 +37,25 @@ if (-not $admin) { throw "Запустите установку от имени 
 New-Item -ItemType Directory -Force -Path $Root | Out-Null
 
 # --- 1. Python ---------------------------------------------------------------
+# python.exe из WindowsApps - заглушка Microsoft Store: она пишет в stderr
+# «Python was not found», а Windows PowerShell при $ErrorActionPreference=Stop
+# превращает это в ошибку. Заглушки пропускаем, ошибки проверки глушим.
 function Find-Python {
+    $ErrorActionPreference = "Continue"
     foreach ($cmd in @("py", "python")) {
-        $exe = Get-Command $cmd -ErrorAction SilentlyContinue
-        if (-not $exe) { continue }
+        $exe = Get-Command $cmd -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+        if (-not $exe -or $exe.Source -like "*\WindowsApps\*") { continue }
         $pyArgs = if ($cmd -eq "py") { @("-3", "-c") } else { @("-c") }
-        $out = & $exe.Source @pyArgs "import sys; print(sys.executable if sys.version_info >= (3, 10) else '')" 2>$null
-        if ($LASTEXITCODE -eq 0 -and $out -and (Test-Path $out)) { return $out.Trim() }
+        try {
+            $out = & $exe.Source @pyArgs "import sys; print(sys.executable if sys.version_info >= (3, 10) else '')" 2>$null |
+                Select-Object -Last 1
+        } catch { continue }
+        if ($LASTEXITCODE -eq 0 -and $out -and (Test-Path $out.Trim())) { return $out.Trim() }
     }
-    $known = Join-Path $env:ProgramFiles "Python312\python.exe"
-    if (Test-Path $known) { return $known }
+    foreach ($dir in @($env:ProgramFiles, (Join-Path $env:LOCALAPPDATA "Programs\Python"))) {
+        $known = Join-Path $dir "Python312\python.exe"
+        if (Test-Path $known) { return $known }
+    }
     return $null
 }
 
