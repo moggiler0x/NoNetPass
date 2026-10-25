@@ -180,7 +180,12 @@ class AutoSetup:
         await driver.parse(["components commit"])
         await driver.aclose()
         driver = await self._wait_back()
-        await driver.parse(["interface Chilli0"])
+        try:
+            await driver.parse(["interface Chilli0"])
+        except DriverError as exc:
+            raise SetupError(f"после установки компонента «{name}» Captive portal не появился ({exc}). Откройте "
+                             "«Общие настройки» → «Изменить набор компонентов», поставьте «Captive portal» "
+                             "(«Портал авторизации») вручную и запустите мастер снова") from exc
         return driver
 
     async def _list_components(self, driver: KeeneticDriver) -> list[str]:
