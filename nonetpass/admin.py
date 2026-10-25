@@ -34,6 +34,7 @@ from pydantic import BaseModel, Field
 from .control import RebootRefused
 from .hostcheck import check_catalog
 from .keenetic_config import ConfigError, KeeneticSetup, bundle, bundle_zip
+from .keenetic_usb import download_installer
 from .models import CloseReason
 from .reports import build_report, parse_period, report_csv
 
@@ -392,7 +393,12 @@ def build_admin_router(ctx, auth: AdminAuth, client_ip) -> APIRouter:
                               profile=body.profile, mode=body.mode, portal=body.portal,
                               rci_password=body.rci_password)
         try:
-            files = bundle(setup, ctx.catalog, body.base or None, body.router_url)
+            setup.validate()
+            installer = None
+            if setup.mode == "router":
+                with contextlib.suppress(OSError):
+                    installer = await asyncio.to_thread(download_installer, timeout=15)
+            files = bundle(setup, ctx.catalog, body.base or None, body.router_url, installer)
         except ConfigError as exc:
             raise HTTPException(422, str(exc))
         journal.audit("keenetic_config", actor=actor, nas_id=body.nas_id, startup_config=bool(body.base))

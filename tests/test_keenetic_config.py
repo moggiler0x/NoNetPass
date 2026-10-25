@@ -1,17 +1,25 @@
 import io
+import subprocess
+import tarfile
 import zipfile
 from argparse import Namespace
 from pathlib import Path
 
 import pytest
+from test_admin import PANEL, login, make_client
 
 from nonetpass.gates import load_catalog
 from nonetpass.keenetic_config import (
-    ConfigError, KeeneticSetup, bundle, cli_commands, nonetpass_env, parse, patch_startup_config,
+    ConfigError,
+    KeeneticSetup,
+    bundle,
+    cli_commands,
+    nonetpass_env,
+    parse,
+    patch_startup_config,
 )
+from nonetpass.keenetic_usb import SOURCE, setup_script
 from nonetpass.keenetic_wizard import run
-
-from test_admin import PANEL, login, make_client
 
 BASE = (Path(__file__).parent / "data" / "keenetic-startup-config.txt").read_text()
 
@@ -105,6 +113,7 @@ def test_commands_without_config():
     assert "startup-config.txt" not in files
     cmds = files["keenetic-commands.txt"].splitlines()
     assert "interface Chilli0 chilli radiusnasid Sv1" in cmds
+    assert "opkg disk NONETPASS:/" in cmds
     assert cmds[-1] == "system configuration save"
     assert "Конфиг роутера не передан" in files["README.txt"]
     assert "chilli dhcpif Bridge1" in cli_commands(KeeneticSetup(nas_id="Sv1"), load_catalog(), BASE)
@@ -112,7 +121,8 @@ def test_commands_without_config():
 
 def _args(tmp_path, **kw):
     base = dict(nas_id=None, base=None, ssid=None, wifi_password=None, profile=None, mode=None,
-                portal=None, rci_password=None, router_url="http://192.168.1.1", out=str(tmp_path / "out"))
+                portal=None, rci_password=None, router_url="http://192.168.1.1", out=str(tmp_path / "out"),
+                no_download=True)
     return Namespace(**{**base, **kw})
 
 
@@ -126,10 +136,14 @@ def test_wizard_asks_nas_id_first(tmp_path):
         asked.append(prompt)
         return next((v for k, v in answers.items() if prompt.startswith(k)), default)
 
-    assert run(_args(tmp_path), load_catalog(), ask=ask, interactive=True) == 0
+    fake = b"\x1f\x8bentware"
+    assert run(_args(tmp_path, no_download=False), load_catalog(), ask=ask, interactive=True,
+               download=lambda: fake) == 0
     assert asked[0].startswith("RADIUS NAS ID")
-    out = (tmp_path / "out" / "startup-config.txt").read_text()
-    assert "chilli radiusnasid Sv777" in out
+    out = tmp_path / "out"
+    assert "chilli radiusnasid Sv777" in (out / "startup-config.txt").read_text()
+    assert (out / "usb/install/aarch64-installer.tar.gz").read_bytes() == fake
+    assert (out / "usb/install/nonetpass.tgz").stat().st_size > 0
 
 
 def test_wizard_flags_and_errors(tmp_path, capsys):
@@ -137,10 +151,15 @@ def test_wizard_flags_and_errors(tmp_path, capsys):
     assert run(_args(tmp_path, nas_id="bad id"), load_catalog(), interactive=False) == 1
     assert "NAS ID" in capsys.readouterr().err
     assert run(_args(tmp_path, nas_id="Sv1"), load_catalog(), interactive=False) == 0
-    assert sorted(p.name for p in (tmp_path / "out").iterdir()) == ["README.txt", "keenetic-commands.txt", "nonetpass.env"]
+    assert sorted(p.name for p in (tmp_path / "out").iterdir()) == ["README.txt", "keenetic-commands.txt", "usb"]
+    assert "Установщика Entware в архиве нет" in (tmp_path / "out" / "README.txt").read_text()
 
 
-def test_admin_endpoint_returns_zip(tmp_path):
+def test_admin_endpoint_returns_zip(tmp_path, monkeypatch):
+    def offline(**kw):
+        raise OSError("нет сети")
+
+    monkeypatch.setattr("nonetpass.admin.download_installer", offline)
     client, _, ctx = make_client(tmp_path)
     with client:
         body = {"nas_id": "Sv42", "base": BASE}
@@ -150,6 +169,50 @@ def test_admin_endpoint_returns_zip(tmp_path):
         assert r.status_code == 200 and r.headers["content-type"] == "application/zip"
         names = zipfile.ZipFile(io.BytesIO(r.content)).namelist()
         assert "nonetpass-keenetic/startup-config.txt" in names
+        assert "nonetpass-keenetic/usb/install/nonetpass.tgz" in names
         bad = client.post("/api/admin/keenetic-config", json={"nas_id": "a b"}, headers=PANEL)
         assert bad.status_code == 422 and "NAS ID" in bad.json()["detail"]
         assert any(e.get("event") == "keenetic_config" for e in ctx.journal.tail(20, audit_only=True))
+
+
+def test_router_mode_points_opkg_at_usb():
+    out = patch_startup_config(BASE, KeeneticSetup(nas_id="Sv1"), load_catalog())
+    heads = [i.head for i in parse(out)]
+    assert heads.count("opkg disk NONETPASS:/") == 1
+    assert patch_startup_config(out, KeeneticSetup(nas_id="Sv1"), load_catalog()) == out
+    server = KeeneticSetup(nas_id="Sv1", mode="server", portal="10.1.30.10", rci_password="rci-pass-123")
+    assert "opkg disk" not in patch_startup_config(BASE, server, load_catalog())
+
+
+def test_existing_entware_disk_is_kept():
+    base = BASE.replace("isolate-private\n", "isolate-private\nopkg disk MYDISK:/\n")
+    files = bundle(KeeneticSetup(nas_id="Sv1"), load_catalog(), base, installer=b"\x1f\x8bx")
+    heads = [i.head for i in parse(files["startup-config.txt"])]
+    assert "opkg disk MYDISK:/" in heads and "opkg disk NONETPASS:/" not in heads
+    assert "usb/install/aarch64-installer.tar.gz" not in files  # Entware уже стоит
+    assert "opkg disk MYDISK:/" in files["README.txt"]
+    assert "opkg disk" not in files["keenetic-commands.txt"]
+
+
+def test_usb_package_installs_and_starts_nonetpass():
+    files = bundle(KeeneticSetup(nas_id="Sv1"), load_catalog(), BASE, installer=b"\x1f\x8bx", pin="135790")
+    assert files["usb/install/aarch64-installer.tar.gz"] == b"\x1f\x8bx"
+    assert "PIN 135790" in files["README.txt"]
+    with tarfile.open(fileobj=io.BytesIO(files["usb/install/nonetpass.tgz"])) as tar:
+        members = {m.name: m for m in tar.getmembers()}
+        read = lambda name: tar.extractfile(name).read().decode()
+        env, setup, init = (read(f"opt/etc/{n}") for n in ("nonetpass.env", "init.d/S98nonetpass-setup",
+                                                          "init.d/S99nonetpass"))
+    assert members["opt/etc/init.d/S98nonetpass-setup"].mode == 0o755
+    assert members["opt/etc/nonetpass.env"].mode == 0o600
+    assert "NONETPASS_ADMIN_PIN=135790" in env and "NONETPASS_DRIVER=keenetic" in env
+    assert "NONETPASS_ROUTER_URL=http://127.0.0.1:79" in env
+    assert "opkg install python3 python3-pip" in setup
+    assert 'pip3 install --no-cache-dir "$SOURCE"' in setup and SOURCE in setup
+    assert init == (Path(__file__).parent.parent / "deploy" / "keenetic" / "S99nonetpass").read_text()
+
+
+def test_usb_scripts_are_valid_sh(tmp_path):
+    script = tmp_path / "setup.sh"
+    script.write_text(setup_script())
+    assert subprocess.run(["sh", "-n", str(script)], check=False).returncode == 0

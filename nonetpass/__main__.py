@@ -24,6 +24,7 @@ def main() -> None:
     kc.add_argument("--portal", help="IP NoNetPass (режим server)")
     kc.add_argument("--rci-password", help="режим server: пароль пользователя nonetpass на роутере")
     kc.add_argument("--router-url", default="http://192.168.1.1", help="режим server: адрес роутера для RCI")
+    kc.add_argument("--no-download", action="store_true", help="не скачивать установщик Entware для флешки")
     kc.add_argument("--out", default="nonetpass-keenetic", help="каталог для файлов")
     args = parser.parse_args()
     settings = Settings.from_env()
