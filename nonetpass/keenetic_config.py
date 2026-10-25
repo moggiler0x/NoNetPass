@@ -11,6 +11,9 @@
 * окна NoNetPass открывает через RCI командами ``chilli uamallowed`` и сам
   закрывает их; без ``system configuration save``, поэтому перезагрузка
   тоже закрывает окно;
+* NoNetPass на роутере ставится сам с флешки: ``opkg disk`` указывает на
+  флешку с меткой ``NONETPASS``, а на неё кладутся установщик Entware и
+  архив NoNetPass (см. keenetic_usb.py);
 * для NoNetPass на отдельной машине создаётся пользователь ``nonetpass``
   с доступом к RCI (тег ``http``).
 
@@ -22,7 +25,8 @@
   пароль администратора и остальное;
 * ``keenetic-commands.txt`` — те же изменения командами CLI, их можно
   вставить в командную строку веб-интерфейса без конфига;
-* ``nonetpass.env`` — настройки NoNetPass под этот роутер;
+* ``usb/`` — содержимое флешки (режим router) или ``nonetpass.env`` с
+  настройками NoNetPass (режим server);
 * ``README.txt`` — порядок действий.
 
 Команды взяты из справочника CLI KeeneticOS 4.x (разделы interface chilli,
@@ -36,6 +40,7 @@ from __future__ import annotations
 import io
 import ipaddress
 import re
+import secrets
 import zipfile
 from dataclasses import dataclass
 
@@ -48,6 +53,7 @@ DEFAULT_BRIDGE = "Bridge1"
 DEFAULT_GUEST_IP = "10.1.30.1"  # адрес гостевого сегмента Keenetic по умолчанию
 LOCAL_RCI = "http://127.0.0.1:79"
 
+PORTAL_ACL = "_NONETPASS_PORTAL"
 GRANT_CMD = "interface Chilli0 chilli uamallowed {dst}"
 REVOKE_CMD = "interface Chilli0 no chilli uamallowed {dst}"
 
@@ -56,6 +62,7 @@ MODES = ("router", "server")
 # Значения попадают в конфиг как аргументы команд: без кавычек и переводов строк.
 _SAFE = re.compile(r"^[^\s\"'\\!#]+$")
 _SSID = re.compile(r"^[^\"\\\r\n]{1,32}$")
+_LABEL = re.compile(r"^[A-Za-z0-9_-]{1,16}$")
 
 
 class ConfigError(ValueError):
@@ -73,6 +80,7 @@ class KeeneticSetup:
     portal_port: int = 8080
     portal_name: str = "nonetpass.lan"
     rci_password: str = ""  # режим server: пароль пользователя nonetpass на роутере
+    usb_label: str = "NONETPASS"  # режим router: метка раздела ext4 на флешке
 
     def validate(self) -> None:
         if not self.nas_id or not _SAFE.match(self.nas_id) or len(self.nas_id) > 64:
@@ -98,6 +106,8 @@ class KeeneticSetup:
             raise ConfigError("имя портала: без пробелов и кавычек")
         if self.mode == "server" and (len(self.rci_password) < 8 or not _SAFE.match(self.rci_password)):
             raise ConfigError("режим server: пароль пользователя nonetpass от 8 символов без пробелов и кавычек")
+        if not _LABEL.match(self.usb_label):
+            raise ConfigError("метка флешки: латиница, цифры, _ и -, до 16 символов")
 
 
 def _quote(value: str) -> str:
@@ -158,13 +168,14 @@ def _find(items: list[Item], head: str) -> int | None:
 
 
 def _merge(item: Item, drop: tuple[str, ...], add: list[str]) -> None:
-    """Убрать вложенные команды с префиксами из drop и дописать add (``up`` — последней)."""
+    """Убрать вложенные команды с префиксами из drop и дописать add (``up`` остаётся последней)."""
 
     def dropped(child: str) -> bool:
         return child == "up" or child in add or any(child == p or child.startswith(p + " ") for p in drop)
 
+    up = "up" in add or "up" in item.children  # «up» включает интерфейс: оставляем последней строкой
     keep = [c for c in item.children if not dropped(c)]
-    item.children = keep + [c for c in add if c != "up"] + (["up"] if "up" in add else [])
+    item.children = keep + [c for c in add if c != "up"] + (["up"] if up else [])
     item.closed = True
 
 
@@ -213,6 +224,22 @@ def _chilli_lines(setup: KeeneticSetup, catalog: GateCatalog, bridge: str, porta
     ]
 
 
+def existing_opkg_disk(items: list[Item]) -> str | None:
+    """Раздел Entware, если он уже настроен: тогда NoNetPass ставится на него."""
+    return next((it.head.split(None, 2)[2] for it in items if it.head.startswith("opkg disk ")), None)
+
+
+def portal_acl_needed(setup: KeeneticSetup, guest_ip: str) -> bool:
+    """NoNetPass вне гостевой сети: гостям нужен разрешающий доступ к порталу."""
+    if setup.mode != "server":
+        return False
+    return ipaddress.IPv4Address(setup.portal) not in ipaddress.IPv4Network(f"{guest_ip}/24", strict=False)
+
+
+def _acl_rule(setup: KeeneticSetup) -> str:
+    return f"permit tcp 0.0.0.0 0.0.0.0 {setup.portal} 255.255.255.255 port eq {setup.portal_port}"
+
+
 def _user_lines(setup: KeeneticSetup) -> list[str]:
     return [f"password {setup.rci_password}", "tag http"]
 
@@ -223,7 +250,7 @@ def patch_startup_config(text: str, setup: KeeneticSetup, catalog: GateCatalog) 
     items = parse(text)
     if not any(i.head.startswith("! $$$ Model:") for i in items) or _find(items, "system") is None:
         raise ConfigError("не похоже на startup-config Keenetic: нет заголовка «! $$$ Model» или блока system")
-    bridge, alias, guest_ip = guest_segment(items)
+    bridge, _, guest_ip = guest_segment(items)
     portal = setup.portal or guest_ip
 
     drop, add = _ap_lines(setup)
@@ -247,6 +274,20 @@ def patch_startup_config(text: str, setup: KeeneticSetup, catalog: GateCatalog) 
         items.insert(at, Item("ip nat Chilli0", []))
         at += 1
     items.insert(at, Item(f"ip host {setup.portal_name} {portal}", []))
+
+    if setup.mode == "router" and existing_opkg_disk(items) is None:
+        items.insert(at + 1, Item(f"opkg disk {setup.usb_label}:/", []))
+
+    # Гостевой сегмент (protected) не ходит в домашнюю сеть: разрешаем порт портала.
+    if portal_acl_needed(setup, guest_ip):
+        i = _find(items, f"access-list {PORTAL_ACL}")
+        if i is None:
+            first_if = next(n for n, it in enumerate(items) if it.head.startswith("interface "))
+            items.insert(first_if, Item(f"access-list {PORTAL_ACL}", []))
+            i = first_if
+        items[i].children, items[i].closed = [_acl_rule(setup)], True
+        for head in (f"interface {bridge}", CHILLI):
+            _merge(items[_find(items, head)], (), [f"ip access-group {PORTAL_ACL} in"])
 
     if setup.mode == "server":
         i = _find(items, "user nonetpass")
@@ -282,6 +323,14 @@ def cli_commands(setup: KeeneticSetup, catalog: GateCatalog, base: str | None = 
     lines.append(CHILLI)
     lines += [f"{CHILLI} {c}" for c in _chilli_lines(setup, catalog, bridge, portal)]
     lines += ["ip nat Chilli0", f"ip host {setup.portal_name} {portal}"]
+    if setup.mode == "router" and (not base or existing_opkg_disk(parse(base)) is None):
+        lines.append(f"opkg disk {setup.usb_label}:/")
+    if portal_acl_needed(setup, guest_ip):
+        lines += [
+            f"access-list {PORTAL_ACL} {_acl_rule(setup)}",
+            f"interface {bridge} ip access-group {PORTAL_ACL} in",
+            f"{CHILLI} ip access-group {PORTAL_ACL} in",
+        ]
     if setup.mode == "server":
         lines.append("user nonetpass")
         lines += [f"user nonetpass {c}" for c in _user_lines(setup)]
@@ -289,70 +338,119 @@ def cli_commands(setup: KeeneticSetup, catalog: GateCatalog, base: str | None = 
     return "\n".join(lines) + "\n"
 
 
-def nonetpass_env(setup: KeeneticSetup, router_url: str = "http://192.168.1.1") -> str:
-    lines = [
-        "# Настройки NoNetPass для Keenetic с Captive portal (дописать в nonetpass.env).",
-        "NONETPASS_DRIVER=keenetic",
-        f'NONETPASS_DRIVER_OPT_GRANT_CMD="{GRANT_CMD}"',
-        f'NONETPASS_DRIVER_OPT_REVOKE_CMD="{REVOKE_CMD}"',
-    ]
+def nonetpass_env_vars(setup: KeeneticSetup, router_url: str = "http://192.168.1.1") -> dict[str, str]:
+    env = {
+        "NONETPASS_DRIVER": "keenetic",
+        "NONETPASS_DRIVER_OPT_GRANT_CMD": GRANT_CMD,
+        "NONETPASS_DRIVER_OPT_REVOKE_CMD": REVOKE_CMD,
+    }
     if setup.mode == "router":
-        lines += ["# NoNetPass на роутере: локальный RCI без пароля.", f"NONETPASS_ROUTER_URL={LOCAL_RCI}"]
+        env["NONETPASS_ROUTER_URL"] = LOCAL_RCI  # NoNetPass на роутере: локальный RCI без пароля
     else:
-        lines += [
-            f"NONETPASS_ROUTER_URL={router_url}",
-            "NONETPASS_ROUTER_USER=nonetpass",
-            f"NONETPASS_ROUTER_PASSWORD={setup.rci_password}",
-        ]
+        env.update({
+            "NONETPASS_ROUTER_URL": router_url,
+            "NONETPASS_ROUTER_USER": "nonetpass",
+            "NONETPASS_ROUTER_PASSWORD": setup.rci_password,
+        })
+    return env
+
+
+def nonetpass_env(setup: KeeneticSetup, router_url: str = "http://192.168.1.1") -> str:
+    lines = ["# Настройки NoNetPass для Keenetic с Captive portal (дописать в nonetpass.env)."]
+    lines += [f'{k}="{v}"' if " " in v else f"{k}={v}" for k, v in nonetpass_env_vars(setup, router_url).items()]
     return "\n".join(lines) + "\n"
 
 
-def readme(setup: KeeneticSetup, has_config: bool) -> str:
-    install = (
-        "NoNetPass на роутере (Entware): deploy/keenetic/README.md, вариант А.\n"
-        "   nonetpass.env положите в /opt/etc/nonetpass.env, S99nonetpass подхватит его."
-        if setup.mode == "router" else
-        "NoNetPass на отдельной машине: sudo ./install.sh, затем допишите nonetpass.env\n"
-        "   в /etc/nonetpass.env и перезапустите службу nonetpass."
+def readme(setup: KeeneticSetup, has_config: bool, pin: str = "", opkg_disk: str | None = None,
+           has_installer: bool = True) -> str:
+    components = "«Captive portal»"
+    if setup.mode == "router":
+        components += ", «Поддержка открытых пакетов» (OPKG) и «Файловая система Ext»"
+    steps = [
+        "Обновите KeeneticOS до 4.3 или новее («Общие настройки»).",
+        (f"«Общие настройки» → «Изменить набор компонентов»: отметьте {components}\n"
+         "   и установите одним обновлением. Без них роутер пропустит часть команд."),
+    ]
+    if setup.mode == "router":
+        if opkg_disk:
+            steps.append(
+                f"Entware на роутере уже есть (opkg disk {opkg_disk}). Скопируйте\n"
+                f"   usb/install/nonetpass.tgz в папку install на этом диске и перезагрузите роутер."
+            )
+        else:
+            installer = "" if has_installer else (
+                "\n   Установщика Entware в архиве нет (не скачался): положите в usb/install\n"
+                "   файл https://bin.entware.net/aarch64-k3.10/installer/aarch64-installer.tar.gz"
+            )
+            steps.append(
+                f"Отформатируйте флешку в ext4 с меткой {setup.usb_label} (Windows: MiniTool Partition\n"
+                f"   Wizard или аналог; Linux: mkfs.ext4 -L {setup.usb_label} /dev/sdX1) и скопируйте\n"
+                f"   на неё содержимое папки usb (в корне флешки должна быть папка install).{installer}\n"
+                "   Вставьте флешку в роутер."
+            )
+    if has_config:
+        steps.append(
+            "«Управление» → «Параметры системы» → «Файлы»: startup-config → «Заменить файл»,\n"
+            "   выберите startup-config.txt. Если роутер не перезагрузится сам, перезагрузите его.\n"
+            "   Сохраните старый startup-config, чтобы вернуть его, если что-то пойдёт не так."
+        )
+    else:
+        steps.append(
+            "Конфиг роутера не передан, поэтому готового startup-config нет.\n"
+            "   Выполните keenetic-commands.txt в командной строке веб-интерфейса\n"
+            "   (my.keenetic.net/webcli) или скачайте startup-config («Управление» →\n"
+            "   «Параметры системы» → «Файлы») и запустите генератор ещё раз."
+        )
+    if setup.mode == "router":
+        steps.append(
+            "Роутер сам поставит Entware, Python и NoNetPass (нужен интернет, 10-20 минут).\n"
+            "   Журнал: /opt/var/log/nonetpass-install.log. Если через 20 минут портал не\n"
+            "   открывается, перезагрузите роутер: установка продолжится."
+        )
+    else:
+        steps.append(
+            f"NoNetPass на компьютере {setup.portal}: Windows — deploy/windows/install.cmd,\n"
+            "   Linux — sudo ./install.sh. Настройки роутера из nonetpass.env допишите в его\n"
+            "   nonetpass.env (галка «Сразу подключить» во вкладке «Keenetic» делает это сама)\n"
+            "   и закрепите за компьютером постоянный IP в роутере."
+        )
+    steps.append(
+        f"Подключитесь к сети «{setup.ssid}»: должна открыться страница ClientPulse,\n"
+        f"   портал NoNetPass доступен по адресу http://{setup.portal_name}:{setup.portal_port}."
     )
-    upload = (
-        "3. «Управление» → «Параметры системы» → «Файлы»: startup-config → «Заменить файл»,\n"
-        "   выберите startup-config.txt. Если роутер не перезагрузится сам, перезагрузите его.\n"
-        "   Если что-то пойдёт не так, верните старый файл тем же способом."
-        if has_config else
-        "3. Конфиг роутера не передан, поэтому готового startup-config нет.\n"
-        "   Выполните keenetic-commands.txt в командной строке веб-интерфейса\n"
-        "   (my.keenetic.net/webcli) или скачайте startup-config («Управление» →\n"
-        "   «Параметры системы» → «Файлы») и запустите генератор ещё раз."
-    )
-    return (
-        f"NoNetPass для Keenetic: Captive portal {setup.profile}, NAS ID {setup.nas_id}\n"
-        "\n"
-        "1. Обновите KeeneticOS до 4.3 или новее («Общие настройки»).\n"
-        "2. «Общие настройки» → «Изменить набор компонентов»: установите «Captive portal».\n"
-        "   Без компонента роутер пропустит команды chilli.\n"
-        f"{upload}\n"
-        f"4. {install}\n"
-        f"5. Подключитесь к сети «{setup.ssid}»: должна открыться страница ClientPulse,\n"
-        f"   портал NoNetPass доступен по адресу http://{setup.portal_name}:{setup.portal_port}.\n"
-        "\n"
-        "Если устройство долго не получает IP, выключите Captive portal в настройках\n"
+    text = f"NoNetPass для Keenetic: Captive portal {setup.profile}, NAS ID {setup.nas_id}\n\n"
+    text += "".join(f"{n}. {step}\n" for n, step in enumerate(steps, 1))
+    if pin:
+        text += f"\nАдмин-панель: http://{setup.portal_name}:{setup.portal_port}/admin, PIN {pin}\n"
+    return text + (
+        "\nЕсли устройство долго не получает IP, выключите Captive portal в настройках\n"
         "гостевой сети, сохраните и включите снова (совет из инструкции ClientPulse).\n"
     )
 
 
 def bundle(setup: KeeneticSetup, catalog: GateCatalog, base: str | None = None,
-           router_url: str = "http://192.168.1.1") -> dict[str, str]:
-    files = {}
+           router_url: str = "http://192.168.1.1", installer: bytes | None = None,
+           pin: str | None = None, secret: str | None = None) -> dict[str, str | bytes]:
+    """Файлы архива. В режиме router installer — установщик Entware для флешки."""
+    from . import keenetic_usb as usb
+
+    files: dict[str, str | bytes] = {}
     if base:
         files["startup-config.txt"] = patch_startup_config(base, setup, catalog)
     files["keenetic-commands.txt"] = cli_commands(setup, catalog, base)
-    files["nonetpass.env"] = nonetpass_env(setup, router_url)
-    files["README.txt"] = readme(setup, bool(base))
+    opkg_disk = existing_opkg_disk(parse(base)) if base else None
+    if setup.mode == "router":
+        pin = pin or usb.new_pin()
+        files[f"usb/install/{usb.PACKAGE_NAME}"] = usb.package(setup, pin, secret or secrets.token_hex(16))
+        if installer and not opkg_disk:
+            files[f"usb/install/{usb.INSTALLER_NAME}"] = installer
+    else:
+        files["nonetpass.env"] = nonetpass_env(setup, router_url)
+    files["README.txt"] = readme(setup, bool(base), pin or "", opkg_disk, bool(installer))
     return files
 
 
-def bundle_zip(files: dict[str, str]) -> bytes:
+def bundle_zip(files: dict[str, str | bytes]) -> bytes:
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
         for name, content in files.items():

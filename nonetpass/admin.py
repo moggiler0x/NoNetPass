@@ -23,7 +23,9 @@ import hashlib
 import hmac
 import ipaddress
 import json
+import os
 import secrets
+import socket
 import time
 from collections import defaultdict, deque
 
@@ -33,7 +35,9 @@ from pydantic import BaseModel, Field
 
 from .control import RebootRefused
 from .hostcheck import check_catalog
-from .keenetic_config import ConfigError, KeeneticSetup, bundle, bundle_zip
+from .config import update_env_file
+from .keenetic_config import ConfigError, KeeneticSetup, bundle, bundle_zip, nonetpass_env_vars
+from .keenetic_usb import download_installer
 from .models import CloseReason
 from .reports import build_report, parse_period, report_csv
 
@@ -73,8 +77,9 @@ class KeeneticIn(BaseModel):
     mode: str = "router"
     portal: str = ""
     rci_password: str = ""
-    router_url: str = "http://192.168.1.1"
+    router_url: str = Field("http://192.168.1.1", pattern=r"^https?://[A-Za-z0-9.:-]+/?$")
     base: str | None = Field(None, max_length=2_000_000)  # текущий startup-config роутера
+    apply: bool = False  # режим server: записать настройки роутера в файл настроек и перезапуститься
 
 
 def token_ok(expected: str | None, authorization: str | None) -> bool:
@@ -169,6 +174,18 @@ class AdminAuth:
             return "token"
         user = self.verify(cookie)
         return f"panel:{user}" if user else None
+
+
+def local_ip() -> str | None:
+    """Адрес этой машины в локальной сети (пакеты не отправляются)."""
+    with contextlib.suppress(OSError), socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+        sock.connect(("192.0.2.1", 9))
+        return sock.getsockname()[0]
+    return None
+
+
+def on_keenetic() -> bool:
+    return os.path.exists("/opt/etc/init.d/rc.func") and os.path.exists("/opt/etc/ndm")
 
 
 def build_admin_router(ctx, auth: AdminAuth, client_ip) -> APIRouter:
@@ -386,17 +403,39 @@ def build_admin_router(ctx, auth: AdminAuth, client_ip) -> APIRouter:
 
     # --- конфиг Keenetic ------------------------------------------------------
 
+    @router.get("/keenetic-config")
+    async def keenetic_defaults(actor: str = Depends(admin)):
+        ip = local_ip()
+        return {
+            "portal": ip or "",
+            "router_url": f"http://{ip.rsplit('.', 1)[0]}.1" if ip else "http://192.168.1.1",
+            "mode": "router" if on_keenetic() else "server",
+            "can_apply": bool(ctx.settings.env_file),
+        }
+
     @router.post("/keenetic-config")
     async def keenetic_config(body: KeeneticIn, actor: str = Depends(admin)):
         setup = KeeneticSetup(nas_id=body.nas_id, ssid=body.ssid, wifi_password=body.wifi_password,
                               profile=body.profile, mode=body.mode, portal=body.portal,
                               rci_password=body.rci_password)
         try:
-            files = bundle(setup, ctx.catalog, body.base or None, body.router_url)
+            setup.validate()
+            installer = None
+            if setup.mode == "router":
+                with contextlib.suppress(OSError):
+                    installer = await asyncio.to_thread(download_installer, timeout=15)
+            files = bundle(setup, ctx.catalog, body.base or None, body.router_url, installer)
         except ConfigError as exc:
             raise HTTPException(422, str(exc))
-        journal.audit("keenetic_config", actor=actor, nas_id=body.nas_id, startup_config=bool(body.base))
-        return Response(bundle_zip(files), media_type="application/zip",
-                        headers={"Content-Disposition": 'attachment; filename="nonetpass-keenetic.zip"'})
+        applied = body.apply and setup.mode == "server" and bool(ctx.settings.env_file)
+        journal.audit("keenetic_config", actor=actor, nas_id=body.nas_id, startup_config=bool(body.base),
+                      applied=applied)
+        headers = {"Content-Disposition": 'attachment; filename="nonetpass-keenetic.zip"'}
+        if applied:
+            # Настройки роутера в файл, с которым запущен NoNetPass; служба поднимет его заново.
+            update_env_file(ctx.settings.env_file, nonetpass_env_vars(setup, body.router_url))
+            asyncio.get_running_loop().call_later(2, ctx.control.exit)
+            headers["X-NoNetPass-Applied"] = "1"
+        return Response(bundle_zip(files), media_type="application/zip", headers=headers)
 
     return router

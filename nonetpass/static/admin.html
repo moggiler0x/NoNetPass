@@ -264,6 +264,7 @@
         <label class="f">IP NoNetPass<input type="text" id="kc-portal" placeholder="пусто: адрес гостевой сети"></label>
         <label class="f kc-server" hidden>Адрес роутера<input type="text" id="kc-router_url" value="http://192.168.1.1"></label>
         <label class="f kc-server" hidden>Пароль пользователя nonetpass на роутере<input type="text" id="kc-rci_password" autocomplete="off"></label>
+        <label class="row kc-apply" style="grid-column:1/-1;gap:8px;font-size:14px" hidden><input type="checkbox" id="kc-apply" checked> Сразу подключить этот NoNetPass к роутеру (настройки сохранятся, служба перезапустится)</label>
         <label class="f" style="grid-column:1/-1">Текущий startup-config роутера («Управление» → «Параметры системы» → «Файлы»)<input type="file" id="kc-base" accept=".txt,text/plain"></label>
         <div class="row" style="grid-column:1/-1"><button class="btn" type="submit">Скачать конфиг</button>
           <span class="faint">Без startup-config в архиве будут команды CLI вместо готового файла: файл целиком заменяет настройки роутера, поэтому собирается только из его собственного конфига.</span></div>
@@ -542,14 +543,33 @@ document.querySelectorAll("#nav button").forEach((b) => b.onclick = () => {
   if (b.dataset.tab === "reports") loadReport();
   if (b.dataset.tab === "devices") loadRecent().catch((e) => toast(e.message, true));
   if (b.dataset.tab === "system") loadAudit().catch((e) => toast(e.message, true));
+  if (b.dataset.tab === "keenetic") loadKeenetic();
 });
 
 /* ---------- конфиг Keenetic ---------- */
-$("kc-mode").onchange = () => document.querySelectorAll(".kc-server").forEach((el) => el.hidden = $("kc-mode").value !== "server");
+let kcDefaults = { can_apply: false };
+function kcMode() {
+  const server = $("kc-mode").value === "server";
+  document.querySelectorAll(".kc-server").forEach((el) => el.hidden = !server);
+  document.querySelectorAll(".kc-apply").forEach((el) => el.hidden = !(server && kcDefaults.can_apply));
+  if (server && !$("kc-rci_password").value) {
+    const b = new Uint8Array(9); crypto.getRandomValues(b);
+    $("kc-rci_password").value = btoa(String.fromCharCode(...b)).replace(/[+/=]/g, "x");
+  }
+}
+$("kc-mode").onchange = kcMode;
+async function loadKeenetic() {
+  try { kcDefaults = await api("/api/admin/keenetic-config"); } catch { return; }
+  if (!$("kc-portal").value) $("kc-portal").value = kcDefaults.mode === "server" ? kcDefaults.portal : "";
+  $("kc-router_url").value = kcDefaults.router_url;
+  $("kc-mode").value = kcDefaults.mode;
+  kcMode();
+}
 $("kc-form").onsubmit = async (e) => {
   e.preventDefault();
   const body = {};
   for (const k of ["nas_id", "ssid", "wifi_password", "profile", "mode", "portal", "router_url", "rci_password"]) body[k] = $("kc-" + k).value.trim();
+  body.apply = !$("kc-apply").closest("label").hidden && $("kc-apply").checked;
   const file = $("kc-base").files[0];
   if (file) body.base = await file.text();
   const r = await fetch("/api/admin/keenetic-config", { method: "POST", credentials: "same-origin",
@@ -559,7 +579,9 @@ $("kc-form").onsubmit = async (e) => {
   const a = document.createElement("a");
   a.href = URL.createObjectURL(await r.blob()); a.download = "nonetpass-keenetic.zip"; a.click();
   setTimeout(() => URL.revokeObjectURL(a.href), 5000);
-  toast(file ? "Готово: startup-config.txt и инструкция в архиве" : "Готово: команды CLI и инструкция в архиве");
+  const applied = r.headers.get("X-NoNetPass-Applied") === "1";
+  toast((file ? "Готово: startup-config.txt и инструкция в архиве" : "Готово: команды CLI и инструкция в архиве")
+    + (applied ? ". NoNetPass подключён к роутеру и перезапускается." : ""));
 };
 
 /* тема: авто → светлая → тёмная */

@@ -1,13 +1,14 @@
 import argparse
 import logging
 
-from .config import Settings
+from .config import Settings, load_env_file
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(prog="nonetpass")
     parser.add_argument("--host", default="0.0.0.0")
     parser.add_argument("--port", type=int, default=8080)
+    parser.add_argument("--env-file", help="файл настроек KEY=VALUE (значения главнее окружения)")
     sub = parser.add_subparsers(dest="command")
     cfg = sub.add_parser("router-config", help="напечатать разовую настройку роутера")
     cfg.add_argument("kind", choices=["mikrotik", "nftables", "ipset"])
@@ -24,8 +25,11 @@ def main() -> None:
     kc.add_argument("--portal", help="IP NoNetPass (режим server)")
     kc.add_argument("--rci-password", help="режим server: пароль пользователя nonetpass на роутере")
     kc.add_argument("--router-url", default="http://192.168.1.1", help="режим server: адрес роутера для RCI")
+    kc.add_argument("--no-download", action="store_true", help="не скачивать установщик Entware для флешки")
     kc.add_argument("--out", default="nonetpass-keenetic", help="каталог для файлов")
     args = parser.parse_args()
+    if args.env_file:
+        load_env_file(args.env_file)
     settings = Settings.from_env()
 
     if args.command == "keenetic-config":

@@ -351,6 +351,7 @@ nonetpass keenetic-config         # Keenetic + Captive portal ClientPulse: сп�
 [MikroTik `.rsc` и пошаговая инструкция](deploy/mikrotik/README.md),
 [OpenWrt fw4 и procd](deploy/openwrt/),
 [Keenetic Entware](deploy/keenetic/),
+[Windows-компьютер рядом с роутером](deploy/windows/README.md),
 [systemd](deploy/systemd/nonetpass.service), [`Dockerfile`](Dockerfile).
 
 > На роутерах с MIPS FastAPI не ставится (нет сборок pydantic-core). Для них

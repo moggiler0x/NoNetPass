@@ -12,6 +12,51 @@ def _env(name: str, default: str | None = None) -> str | None:
     return os.environ.get(f"NONETPASS_{name}", default)
 
 
+def _unquote(value: str) -> str:
+    value = value.strip()
+    if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
+        return value[1:-1]
+    return value
+
+
+def read_env_file(path: str) -> dict[str, str]:
+    """KEY=VALUE из файла настроек (как EnvironmentFile у systemd и env_file у Docker)."""
+    out = {}
+    with open(path, encoding="utf-8-sig") as fh:
+        for line in fh:
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, _, value = line.partition("=")
+            out[key.strip().removeprefix("export ").strip()] = _unquote(value)
+    return out
+
+
+def load_env_file(path: str) -> None:
+    """Подставить файл настроек в окружение; значения файла главнее."""
+    os.environ.update(read_env_file(path))
+    os.environ["NONETPASS_ENV_FILE"] = os.path.abspath(path)
+
+
+def update_env_file(path: str, updates: dict[str, str]) -> None:
+    """Заменить или дописать ключи в файле настроек, остальное оставить как есть."""
+    try:
+        with open(path, encoding="utf-8-sig") as fh:
+            lines = fh.read().splitlines()
+    except FileNotFoundError:
+        lines = []
+    left = dict(updates)
+    out = []
+    for line in lines:
+        key = line.partition("=")[0].strip().removeprefix("export ").strip()
+        if "=" in line and not line.lstrip().startswith("#") and key in left:
+            line = f'{key}="{left.pop(key)}"'
+        out.append(line)
+    out += [f'{k}="{v}"' for k, v in left.items()]
+    with open(path, "w", encoding="utf-8") as fh:
+        fh.write("\n".join(out) + "\n")
+
+
 def _bool(name: str, default: bool) -> bool:
     raw = _env(name)
     if raw is None:
@@ -148,6 +193,9 @@ class Settings:
     syslog_allow: list[str] = field(default_factory=list)
     # Состояние между запусками: открытые окна, чёрный список, настройки панели.
     state_path: str = "nonetpass-state.json"
+    # Файл настроек, с которым запущен NoNetPass (--env-file): в него админ-панель
+    # записывает настройки роутера из генератора конфига Keenetic.
+    env_file: str | None = None
 
     def catalog(self) -> GateCatalog:
         return load_catalog(self.verify_window_seconds, self.pay_window_seconds, self.gates_file)
@@ -208,4 +256,5 @@ class Settings:
             syslog_host=_env("SYSLOG_HOST", "0.0.0.0") or "0.0.0.0",
             syslog_allow=_list("SYSLOG_ALLOW"),
             state_path=_env("STATE_PATH", "nonetpass-state.json") or "nonetpass-state.json",
+            env_file=_env("ENV_FILE"),
         )
